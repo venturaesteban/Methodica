@@ -1,0 +1,6 @@
+<resources>
+    <!-- Variante oscura del tema XML, usada por el sistema antes de que Compose renderice -->
+    <style name="Theme.Methodica" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

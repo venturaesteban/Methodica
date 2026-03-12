@@ -1,0 +1,31 @@
+# ===== Build outputs =====
+/build
+app/build
+
+# ===== Gradle =====
+.gradle/
+gradle/wrapper/gradle-wrapper.jar
+
+# ===== Android Studio / IntelliJ =====
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ===== Local config (nunca commitear; contiene rutas del SDK local) =====
+local.properties
+
+# ===== Keystore =====
+*.jks
+*.keystore
+
+# ===== Generated files =====
+gen/
+out/
+
+# ===== Logs =====
+*.log
+
+# ===== Room schema exports (descomentar si se activa exportSchema=true) =====
+# app/schemas/

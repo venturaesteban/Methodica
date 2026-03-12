@@ -1,0 +1,10 @@
+<resources>
+    <!--
+        Tema base para modo claro. Compose gestiona el sistema de diseño completo;
+        este tema XML solo evita que el sistema muestre una ActionBar antes de que
+        Compose tome el control.
+    -->
+    <style name="Theme.Methodica" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>

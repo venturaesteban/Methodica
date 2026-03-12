@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Letra "M" de Methodica como icono temporal de Fase 0 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,28 C43,28 34,35 34,44 C34,53 41,57 54,60 C67,63 74,67 74,76 C74,85 65,92 54,92 C43,92 34,85 34,76"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round" />
+</vector>
