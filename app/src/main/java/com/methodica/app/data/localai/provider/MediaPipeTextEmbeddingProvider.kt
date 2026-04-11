@@ -1,7 +1,9 @@
 package com.methodica.app.data.localai.provider
 
 import android.content.Context
+import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder
+import com.google.mediapipe.tasks.text.textembedder.TextEmbedder.TextEmbedderOptions
 import com.methodica.app.domain.ai.local.ChunkEmbedding
 import com.methodica.app.domain.ai.local.EmbeddingProvider
 import com.methodica.app.domain.ai.local.LocalAiModelSpec
@@ -41,26 +43,24 @@ class MediaPipeTextEmbeddingProvider @Inject constructor(
         }
     }
 
+    suspend fun warmUp(): Result<Unit> = runCatching {
+        ensureEmbedder()
+    }
+
     private suspend fun ensureEmbedder(): TextEmbedder = mutex.withLock {
         textEmbedder?.let { return it }
         runtimeManager.ensureModelReady(EMBEDDING_SPEC).getOrThrow()
         val modelFile = context.filesDir.resolve(EMBEDDING_SPEC.localRelativePath)
-        if (!modelFile.exists()) {
-            val msg = "Modelo no encontrado en ${modelFile.absolutePath}"
-            runtimeManager.markModelError(LocalAiModelType.EMBEDDING_GEMMA, msg)
-            error(msg)
-        }
-
-        runCatching {
-            TextEmbedder.createFromFile(context, modelFile.absolutePath)
-        }.onFailure {
-            runtimeManager.markModelError(
-                LocalAiModelType.EMBEDDING_GEMMA,
-                "No se pudo inicializar TextEmbedder con archivo local: ${it.message}"
+        val options = TextEmbedderOptions.builder()
+            .setBaseOptions(
+                BaseOptions.builder()
+                    .setModelAssetPath(modelFile.absolutePath)
+                    .build()
             )
-        }.getOrThrow().also { created ->
-            textEmbedder = created
-        }
+            .build()
+        val created = TextEmbedder.createFromOptions(context, options)
+        textEmbedder = created
+        created
     }
 
     companion object {

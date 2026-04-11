@@ -2,7 +2,6 @@ package com.methodica.app.data.localai.runtime
 
 import android.app.ActivityManager
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.StatFs
 import com.methodica.app.data.local.dao.AiIndexingRunDao
@@ -135,14 +134,6 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
         }
     }
 
-
-    override suspend fun markModelError(type: LocalAiModelType, message: String) {
-        val existing = modelStateDao.getByModelType(type.name)
-        if (existing != null) {
-            modelStateDao.upsert(existing.copy(status = STATUS_ERROR, lastError = message, updatedAt = System.currentTimeMillis()))
-        }
-    }
-
     override suspend fun releaseModels() {
         // El provider de embeddings mantiene la instancia del runtime y la libera en GC.
     }
@@ -187,15 +178,7 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
             persistState(spec, STATUS_MISSING_MODEL, "No existe archivo del modelo en ${modelFile.absolutePath}")
             error("Archivo de modelo no encontrado")
         }
-        val expected = spec.expectedSha256
-        if (expected.isNullOrBlank()) {
-            val isDebug = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-            if (!isDebug) {
-                persistState(spec, STATUS_INTEGRITY_ERROR, "En release se requiere expectedSha256 para ${spec.id}")
-                error("En release debe configurarse expectedSha256")
-            }
-            return
-        }
+        val expected = spec.expectedSha256 ?: return
         val actual = sha256(modelFile)
         if (!actual.equals(expected, ignoreCase = true)) {
             persistState(spec, STATUS_INTEGRITY_ERROR, "SHA-256 inválido para ${spec.id}. Esperado=$expected actual=$actual")
