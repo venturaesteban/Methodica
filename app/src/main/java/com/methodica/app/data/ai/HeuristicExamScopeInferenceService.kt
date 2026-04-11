@@ -19,7 +19,7 @@ class HeuristicExamScopeInferenceService @Inject constructor() : ExamScopeInfere
         val inferredTopics = (sureTopics + probableTopics).distinct()
 
         var confidence = 0.35f
-        confidence += (parsedDocument.examSignals.size.coerceAtMost(5) * 0.08f)
+        confidence += (parsedDocument.examSignals.size.coerceAtMost(5) * 0.12f)
         confidence += (parsedDocument.sections.size.coerceAtMost(6) * 0.03f)
         confidence += (parsedDocument.detectedTopics.size.coerceAtMost(10) * 0.025f)
         if (parsedDocument.qualityWarnings.isNotEmpty()) {
