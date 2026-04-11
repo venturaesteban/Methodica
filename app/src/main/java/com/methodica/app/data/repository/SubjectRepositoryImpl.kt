@@ -13,7 +13,10 @@ class SubjectRepositoryImpl(
 ) : SubjectRepository {
 
     override fun observeSubjects(): Flow<List<Subject>> =
-        dao.observeAll().map { entities -> entities.map { it.toDomain() } }
+        dao.observeAll().map { rows -> rows.map { it.toDomain() } }
+
+    override fun observeSubjectsByAcademicYearId(academicYearId: Long): Flow<List<Subject>> =
+        dao.observeByAcademicYearId(academicYearId).map { rows -> rows.map { it.toDomain() } }
 
     override suspend fun getSubject(id: Long): Subject? =
         dao.getById(id)?.toDomain()

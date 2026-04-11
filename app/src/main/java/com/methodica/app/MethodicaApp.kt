@@ -10,11 +10,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -35,6 +37,9 @@ fun MethodicaApp() {
             topBar = {
                 CenterAlignedTopAppBar(
                     title = { Text(currentRoute.toScreenTitle()) },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
                     navigationIcon = {
                         if (!TopLevelDestination.isTopLevel(currentRoute)) {
                             IconButton(onClick = { navController.popBackStack() }) {
@@ -96,7 +101,10 @@ private fun MethodicaBottomBar(
     currentRoute: String?,
     onNavigate:   (TopLevelDestination) -> Unit
 ) {
-    NavigationBar {
+    val glassColor = androidx.compose.material3.MaterialTheme.colorScheme
+        .surfaceContainerLowest
+        .copy(alpha = 0.8f)
+    NavigationBar(containerColor = glassColor, tonalElevation = 0.dp) {
         TopLevelDestination.entries.forEach { destination ->
             NavigationBarItem(
                 selected = currentRoute == destination.route,
@@ -116,13 +124,18 @@ private fun MethodicaBottomBar(
 private fun String?.toScreenTitle(): String = when (this) {
     MethodicaDestination.Home.route           -> "Inicio"
     MethodicaDestination.Today.route          -> "Hoy"
-    MethodicaDestination.Subjects.route       -> "Materias"
+    MethodicaDestination.Degrees.route        -> "Estudios"
     MethodicaDestination.Planning.route       -> "Planificación"
     MethodicaDestination.Materials.route      -> "Materiales"
     MethodicaDestination.Settings.route       -> "Ajustes"
+    MethodicaDestination.AiAnalysis.route     -> "Análisis IA"
+    MethodicaDestination.DegreeForm.route     -> "Titulación"
+    MethodicaDestination.AcademicYears.route  -> "Cursos"
+    MethodicaDestination.Subjects.route       -> "Materias"
     MethodicaDestination.SubjectDetail.route  -> "Detalle de materia"
     MethodicaDestination.SubjectForm.route    -> "Materia"
     MethodicaDestination.TopicForm.route      -> "Tema"
     MethodicaDestination.AssessmentForm.route -> "Evaluación"
+    MethodicaDestination.MaterialForm.route   -> "Material"
     else                                      -> "Methodica"
 }

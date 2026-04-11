@@ -9,5 +9,9 @@ data class Subject(
     val id:          Long    = 0,
     val name:        String,
     val colorHex:    String,
-    val description: String? = null
+    val description: String? = null,
+    val academicYearId: Long = 0,
+    val degreeId: Long = 0,
+    val degreeName: String = "",
+    val courseYear: Int = 1
 )

@@ -19,6 +19,14 @@ class SubjectTest {
     }
 
     @Test
+    fun `subject inicia sin curso academico asignado y metadatos vacios`() {
+        val subject = Subject(name = "Historia", colorHex = "#2196F3")
+        assertEquals(0L, subject.academicYearId)
+        assertEquals("", subject.degreeName)
+        assertEquals(1, subject.courseYear)
+    }
+
+    @Test
     fun `subject mantiene sus propiedades sin mutarlas`() {
         val subject = Subject(id = 7L, name = "Historia", colorHex = "#2196F3", description = "Test")
         assertEquals(7L, subject.id)

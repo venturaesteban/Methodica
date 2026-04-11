@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
  */
 interface SubjectRepository {
     fun observeSubjects(): Flow<List<Subject>>
+    fun observeSubjectsByAcademicYearId(academicYearId: Long): Flow<List<Subject>>
     suspend fun getSubject(id: Long): Subject?
     suspend fun saveSubject(subject: Subject)
     suspend fun deleteSubject(subject: Subject)

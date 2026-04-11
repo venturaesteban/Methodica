@@ -1,26 +1,34 @@
 package com.methodica.app.feature.subjects
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
-import com.methodica.app.AppContainer
+import com.methodica.app.core.navigation.MethodicaDestination
 import com.methodica.app.domain.model.Topic
 import com.methodica.app.domain.usecase.topic.GetTopicUseCase
 import com.methodica.app.domain.usecase.topic.UpsertTopicUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class TopicFormViewModel(
-    private val subjectId:         Long,
-    private val topicId:           Long?,
+@HiltViewModel
+class TopicFormViewModel @Inject constructor(
+    savedStateHandle:               SavedStateHandle,
     private val getTopicUseCase:   GetTopicUseCase,
     private val upsertTopicUseCase: UpsertTopicUseCase
 ) : ViewModel() {
+
+    private val subjectId: Long = checkNotNull(
+        savedStateHandle[MethodicaDestination.TopicForm.ARG_SUBJECT_ID]
+    )
+
+    private val topicId: Long? =
+        savedStateHandle.get<Long>(MethodicaDestination.TopicForm.ARG_TOPIC_ID)
+            ?.takeIf { it != -1L }
 
     private val _uiState = MutableStateFlow(TopicFormUiState())
     val uiState: StateFlow<TopicFormUiState> = _uiState.asStateFlow()
@@ -73,17 +81,4 @@ class TopicFormViewModel(
         }
     }
 
-    companion object {
-        fun factory(subjectId: Long, topicId: Long?, container: AppContainer): ViewModelProvider.Factory =
-            viewModelFactory {
-                initializer {
-                    TopicFormViewModel(
-                        subjectId         = subjectId,
-                        topicId           = topicId,
-                        getTopicUseCase   = container.getTopicUseCase,
-                        upsertTopicUseCase = container.upsertTopicUseCase
-                    )
-                }
-            }
-    }
 }

@@ -1,19 +1,32 @@
 package com.methodica.app
 
 import android.app.Application
+import com.methodica.app.data.work.ReminderScheduler
+import com.methodica.app.domain.repository.PlanningSettingsRepository
+import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
+@HiltAndroidApp
 class MethodicaApplication : Application() {
 
-    /**
-     * Punto de acceso global al contenedor de dependencias.
-     * Los ViewModels que necesiten un repositorio (Fase 1+) obtendrán
-     * la referencia a través de este contenedor vía ViewModelProvider.Factory.
-     */
-    lateinit var container: AppContainer
-        private set
+	@Inject
+	lateinit var planningSettingsRepository: PlanningSettingsRepository
 
-    override fun onCreate() {
-        super.onCreate()
-        container = DefaultAppContainer(this)
-    }
+	@Inject
+	lateinit var reminderScheduler: ReminderScheduler
+
+	private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+	override fun onCreate() {
+		super.onCreate()
+		applicationScope.launch {
+			val remindersEnabled = planningSettingsRepository.observeSettings().first().remindersEnabled
+			if (remindersEnabled) reminderScheduler.scheduleDaily() else reminderScheduler.cancelDaily()
+		}
+	}
 }

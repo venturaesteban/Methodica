@@ -98,8 +98,8 @@ class StudyPlanGenerator {
         }
 
         val totalStudyHoursNeeded  = topicBlocks.sumOf { it.hours }
-        // Repaso: 1 bloque por tema
-        val totalReviewHoursNeeded = linkedTopics.size
+        // Repaso: 1 bloque por tema solo si hay ventana de repaso configurada
+        val totalReviewHoursNeeded = if (settings.finalReviewDays > 0) linkedTopics.size else 0
 
         // --- Distribuir bloques de estudio ---
 

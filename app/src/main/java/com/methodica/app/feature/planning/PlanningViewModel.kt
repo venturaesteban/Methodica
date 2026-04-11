@@ -1,16 +1,17 @@
 package com.methodica.app.feature.planning
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
-import com.methodica.app.AppContainer
 import com.methodica.app.domain.model.Assessment
+import com.methodica.app.domain.model.AiExecutionMode
+import com.methodica.app.domain.usecase.ai.ObserveAiProviderSettingsUseCase
 import com.methodica.app.domain.usecase.assessment.ObserveAllAssessmentsUseCase
 import com.methodica.app.domain.usecase.assessmenttopic.ObserveAssessmentTopicsUseCase
+import com.methodica.app.domain.usecase.ai.AnalyzeAssessmentWithAiUseCase
 import com.methodica.app.domain.usecase.planning.GenerateAssessmentPlanUseCase
 import com.methodica.app.domain.usecase.subject.ObserveSubjectsUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,10 +19,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class PlanningViewModel(
+@HiltViewModel
+class PlanningViewModel @Inject constructor(
     private val observeSubjectsUseCase:          ObserveSubjectsUseCase,
+    private val observeAiProviderSettingsUseCase: ObserveAiProviderSettingsUseCase,
     private val observeAllAssessmentsUseCase:    ObserveAllAssessmentsUseCase,
     private val observeAssessmentTopicsUseCase:  ObserveAssessmentTopicsUseCase,
+    private val analyzeAssessmentWithAiUseCase:  AnalyzeAssessmentWithAiUseCase,
     private val generateAssessmentPlanUseCase:   GenerateAssessmentPlanUseCase
 ) : ViewModel() {
 
@@ -37,18 +41,107 @@ class PlanningViewModel(
             }
         }
         viewModelScope.launch {
+            observeAiProviderSettingsUseCase().collect { settings ->
+                _uiState.update { state ->
+                    val currentMode = if (!settings.isEnabledAndConfigured && state.aiExecutionMode == AiExecutionMode.EXTERNAL) {
+                        AiExecutionMode.HEURISTIC
+                    } else {
+                        state.aiExecutionMode
+                    }
+                    state.copy(
+                        canUseExternalAi = settings.isEnabledAndConfigured,
+                        aiExecutionMode = currentMode
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
             observeAllAssessmentsUseCase().collect { assessments ->
-                _uiState.update { it.copy(assessments = assessments, isLoading = false) }
+                val selectedId = _uiState.value.selectedAssessment?.id
+                val selectedAssessment = selectedId?.let { id -> assessments.firstOrNull { it.id == id } }
+                val selectionRemoved = selectedId != null && selectedAssessment == null
+
+                if (selectionRemoved) {
+                    topicsJob?.cancel()
+                    topicsJob = null
+                }
+
+                _uiState.update {
+                    it.copy(
+                        assessments = assessments,
+                        selectedAssessment = selectedAssessment,
+                        linkedTopics = if (selectionRemoved) emptyList() else it.linkedTopics,
+                        aiInputText = if (selectionRemoved) "" else it.aiInputText,
+                        lastAiInsight = if (selectionRemoved) null else it.lastAiInsight,
+                        aiError = if (selectionRemoved) null else it.aiError,
+                        lastResult = if (selectionRemoved) null else it.lastResult,
+                        error = if (selectionRemoved) null else it.error,
+                        isLoading = false
+                    )
+                }
             }
         }
     }
 
     fun onSelectAssessment(assessment: Assessment) {
-        _uiState.update { it.copy(selectedAssessment = assessment, lastResult = null, error = null) }
+        _uiState.update {
+            it.copy(
+                selectedAssessment = assessment,
+                lastResult = null,
+                lastAiInsight = null,
+                error = null,
+                aiError = null
+            )
+        }
         topicsJob?.cancel()
         topicsJob = viewModelScope.launch {
             observeAssessmentTopicsUseCase(assessment.id).collect { topics ->
                 _uiState.update { it.copy(linkedTopics = topics) }
+            }
+        }
+    }
+
+    fun onAiInputChange(value: String) {
+        _uiState.update { it.copy(aiInputText = value, aiError = null) }
+    }
+
+    fun onAiExecutionModeChange(mode: AiExecutionMode) {
+        _uiState.update {
+            if (mode == AiExecutionMode.EXTERNAL && !it.canUseExternalAi) {
+                it.copy(aiError = "Configura primero tu IA externa en Ajustes")
+            } else {
+                it.copy(aiExecutionMode = mode, aiError = null)
+            }
+        }
+    }
+
+    fun onAnalyzeWithAi() {
+        val assessment = _uiState.value.selectedAssessment ?: return
+        val text = _uiState.value.aiInputText
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isAnalyzingAi = true, aiError = null) }
+            val result = analyzeAssessmentWithAiUseCase(
+                assessmentId = assessment.id,
+                rawText = text,
+                executionMode = _uiState.value.aiExecutionMode,
+                sourceLabel = assessment.title
+            )
+            if (result.isSuccess) {
+                _uiState.update {
+                    it.copy(
+                        isAnalyzingAi = false,
+                        lastAiInsight = result.getOrNull(),
+                        aiError = null
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isAnalyzingAi = false,
+                        aiError = result.exceptionOrNull()?.message
+                    )
+                }
             }
         }
     }
@@ -66,16 +159,4 @@ class PlanningViewModel(
         }
     }
 
-    companion object {
-        fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
-            initializer {
-                PlanningViewModel(
-                    observeSubjectsUseCase         = container.observeSubjectsUseCase,
-                    observeAllAssessmentsUseCase   = container.observeAllAssessmentsUseCase,
-                    observeAssessmentTopicsUseCase = container.observeAssessmentTopicsUseCase,
-                    generateAssessmentPlanUseCase  = container.generateAssessmentPlanUseCase
-                )
-            }
-        }
-    }
 }

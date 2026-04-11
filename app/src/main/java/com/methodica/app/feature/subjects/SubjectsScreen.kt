@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -42,19 +43,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.methodica.app.AppContainer
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.methodica.app.domain.model.Subject
 
 @Composable
 fun SubjectsScreen(
-    container:          AppContainer,
+    academicYearId: Long,
     onNavigateToDetail: (Long) -> Unit,
     onNavigateToForm:   (Long?) -> Unit
 ) {
-    val viewModel: SubjectsViewModel = viewModel(
-        factory = SubjectsViewModel.factory(container)
-    )
+    val viewModel: SubjectsViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     var subjectPendingDelete by remember { mutableStateOf<Subject?>(null) }
@@ -91,7 +89,7 @@ fun SubjectsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     item { Spacer(Modifier.height(8.dp)) }
-                    items(uiState.subjects, key = { it.id }) { subject ->
+                    itemsIndexed(uiState.subjects, key = { index, subject -> "subject-${subject.id}-$index" }) { _, subject ->
                         SubjectItem(
                             subject    = subject,
                             onClick    = { onNavigateToDetail(subject.id) },
@@ -146,6 +144,11 @@ private fun SubjectItem(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(subject.name, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "${subject.degreeName} - Curso ${subject.courseYear}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 if (!subject.description.isNullOrBlank()) {
                     Text(
                         text  = subject.description,

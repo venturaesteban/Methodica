@@ -1,10 +1,10 @@
 package com.methodica.app.core.navigation
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -27,10 +27,10 @@ enum class TopLevelDestination(
         icon  = Icons.Filled.Today,
         label = "Hoy"
     ),
-    SUBJECTS(
-        route = MethodicaDestination.Subjects.route,
-        icon  = Icons.Filled.MenuBook,
-        label = "Materias"
+    DEGREES(
+        route = MethodicaDestination.Degrees.route,
+        icon  = Icons.AutoMirrored.Filled.MenuBook,
+        label = "Estudios"
     ),
     PLANNING(
         route = MethodicaDestination.Planning.route,

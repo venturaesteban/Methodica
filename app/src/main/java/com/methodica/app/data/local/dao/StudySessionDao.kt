@@ -14,6 +14,9 @@ interface StudySessionDao {
     @Query("SELECT * FROM study_sessions WHERE date = :date ORDER BY positionInDay ASC")
     fun observeByDate(date: Long): Flow<List<StudySessionEntity>>
 
+    @Query("SELECT * FROM study_sessions WHERE date = :date ORDER BY positionInDay ASC")
+    suspend fun getByDate(date: Long): List<StudySessionEntity>
+
     @Query("SELECT * FROM study_sessions WHERE date BETWEEN :startDate AND :endDate ORDER BY date ASC, positionInDay ASC")
     fun observeByRange(startDate: Long, endDate: Long): Flow<List<StudySessionEntity>>
 

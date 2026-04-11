@@ -5,3 +5,12 @@ plugins {
     alias(libs.plugins.kotlin.compose)      apply false
     alias(libs.plugins.ksp)                 apply false
 }
+
+buildscript {
+    configurations.classpath {
+        resolutionStrategy.force("com.squareup:javapoet:1.13.0")
+    }
+    dependencies {
+        classpath("com.squareup:javapoet:1.13.0")
+    }
+}

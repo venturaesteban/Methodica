@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,8 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.methodica.app.AppContainer
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.methodica.app.core.designsystem.components.ScholarlyTextField
 
 private val PRESET_COLORS = listOf(
     "#F44336", "#E91E63", "#9C27B0", "#3F51B5",
@@ -43,13 +42,9 @@ private val PRESET_COLORS = listOf(
 @Composable
 fun SubjectFormScreen(
     subjectId:      Long?,
-    container:      AppContainer,
     onNavigateBack: () -> Unit
 ) {
-    val viewModel: SubjectFormViewModel = viewModel(
-        key     = "subjectForm_$subjectId",
-        factory = SubjectFormViewModel.factory(subjectId, container)
-    )
+    val viewModel: SubjectFormViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     // Navegar atrás en cuanto el guardado se confirma
@@ -64,12 +59,12 @@ fun SubjectFormScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        OutlinedTextField(
+        ScholarlyTextField(
+            label = "Nombre *",
             value         = uiState.name,
             onValueChange = viewModel::onNameChange,
-            label         = { Text("Nombre *") },
             isError       = uiState.nameError != null,
-            supportingText = uiState.nameError?.let { { Text(it) } },
+            supportingText = uiState.nameError,
             modifier      = Modifier.fillMaxWidth(),
             singleLine    = true
         )
@@ -95,13 +90,33 @@ fun SubjectFormScreen(
             }
         }
 
-        OutlinedTextField(
+        ScholarlyTextField(
+            label = "Descripción (opcional)",
             value         = uiState.description,
             onValueChange = viewModel::onDescriptionChange,
-            label         = { Text("Descripción (opcional)") },
             modifier      = Modifier.fillMaxWidth(),
             minLines      = 2,
             maxLines      = 4
+        )
+
+        ScholarlyTextField(
+            label = "Titulación *",
+            value          = uiState.degreeName,
+            onValueChange  = viewModel::onDegreeNameChange,
+            isError        = uiState.degreeNameError != null,
+            supportingText = uiState.degreeNameError,
+            modifier       = Modifier.fillMaxWidth(),
+            singleLine     = true
+        )
+
+        ScholarlyTextField(
+            label = "Curso/Año *",
+            value          = uiState.courseYear,
+            onValueChange  = viewModel::onCourseYearChange,
+            isError        = uiState.courseYearError != null,
+            supportingText = uiState.courseYearError,
+            modifier       = Modifier.fillMaxWidth(),
+            singleLine     = true
         )
 
         uiState.error?.let {

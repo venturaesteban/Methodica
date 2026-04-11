@@ -18,6 +18,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
@@ -31,8 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.methodica.app.AppContainer
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.methodica.app.domain.model.AiExecutionMode
 import com.methodica.app.domain.model.PlanningStatus
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -41,8 +42,8 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlanningScreen(
-    container: AppContainer,
-    viewModel: PlanningViewModel = viewModel(factory = PlanningViewModel.factory(container))
+    onNavigateToAiAnalysis: (Long) -> Unit,
+    viewModel: PlanningViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
@@ -110,6 +111,28 @@ fun PlanningScreen(
 
         // Resumen de topics asociados
         if (uiState.selectedAssessment != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = uiState.aiExecutionMode == AiExecutionMode.HEURISTIC,
+                    onClick = { viewModel.onAiExecutionModeChange(AiExecutionMode.HEURISTIC) },
+                    label = { Text("Heurístico") }
+                )
+                FilterChip(
+                    selected = uiState.aiExecutionMode == AiExecutionMode.EXTERNAL,
+                    onClick = { viewModel.onAiExecutionModeChange(AiExecutionMode.EXTERNAL) },
+                    enabled = uiState.canUseExternalAi,
+                    label = { Text("IA configurada") }
+                )
+            }
+
+            if (uiState.aiExecutionMode == AiExecutionMode.EXTERNAL) {
+                Text(
+                    "Usar IA configurada consumirá créditos de tu suscripción.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -126,6 +149,59 @@ fun PlanningScreen(
                         uiState.linkedTopics.forEach { topic ->
                             Text("• ${topic.name} — ${topic.estimatedHours}h (dif. ${topic.difficulty})",
                                 style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = uiState.aiInputText,
+                onValueChange = viewModel::onAiInputChange,
+                label = { Text("Texto del temario para análisis IA") },
+                placeholder = { Text("Pega aquí guía docente, temario o instrucciones del profesor") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 4,
+                maxLines = 8
+            )
+
+            Button(
+                onClick = viewModel::onAnalyzeWithAi,
+                enabled = !uiState.isAnalyzingAi,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (uiState.isAnalyzingAi) "Analizando…" else "Analizar con IA")
+            }
+
+            Button(
+                onClick = { onNavigateToAiAnalysis(uiState.selectedAssessment!!.id) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Abrir análisis IA avanzado")
+            }
+
+            uiState.aiError?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+
+            uiState.lastAiInsight?.let { insight ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Análisis IA", style = MaterialTheme.typography.titleSmall)
+                        Text(insight.summary, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            "Confianza: ${(insight.confidence * 100).toInt()}%${if (insight.requiresConfirmation) " • requiere confirmación" else ""}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (insight.requiresConfirmation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "Alcance estimado: ${insight.scopeInference.estimatedScope.take(180)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        insight.recommendation.warnings.forEach { warning ->
+                            Text("⚠ $warning", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }

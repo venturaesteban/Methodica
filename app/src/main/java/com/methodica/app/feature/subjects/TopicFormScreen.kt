@@ -23,20 +23,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.methodica.app.AppContainer
+import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
 fun TopicFormScreen(
-    subjectId:      Long,
     topicId:        Long?,
-    container:      AppContainer,
     onNavigateBack: () -> Unit
 ) {
-    val viewModel: TopicFormViewModel = viewModel(
-        key     = "topicForm_${subjectId}_$topicId",
-        factory = TopicFormViewModel.factory(subjectId, topicId, container)
-    )
+    val viewModel: TopicFormViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(uiState.isSaved) {

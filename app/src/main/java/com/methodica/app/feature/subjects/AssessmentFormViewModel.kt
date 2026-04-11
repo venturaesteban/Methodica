@@ -1,11 +1,9 @@
 package com.methodica.app.feature.subjects
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
-import com.methodica.app.AppContainer
+import com.methodica.app.core.navigation.MethodicaDestination
 import com.methodica.app.domain.model.Assessment
 import com.methodica.app.domain.model.AssessmentType
 import com.methodica.app.domain.usecase.assessment.GetAssessmentUseCase
@@ -13,21 +11,31 @@ import com.methodica.app.domain.usecase.assessment.UpsertAssessmentUseCase
 import com.methodica.app.domain.usecase.assessmenttopic.ObserveAssessmentTopicIdsUseCase
 import com.methodica.app.domain.usecase.assessmenttopic.ReplaceAssessmentTopicsUseCase
 import com.methodica.app.domain.usecase.topic.ObserveTopicsBySubjectUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class AssessmentFormViewModel(
-    private val subjectId:                        Long,
-    private val assessmentId:                     Long?,
+@HiltViewModel
+class AssessmentFormViewModel @Inject constructor(
+    savedStateHandle:                             SavedStateHandle,
     private val getAssessmentUseCase:             GetAssessmentUseCase,
     private val upsertAssessmentUseCase:          UpsertAssessmentUseCase,
     private val observeTopicsBySubjectUseCase:    ObserveTopicsBySubjectUseCase,
     private val observeAssessmentTopicIdsUseCase: ObserveAssessmentTopicIdsUseCase,
     private val replaceAssessmentTopicsUseCase:   ReplaceAssessmentTopicsUseCase
 ) : ViewModel() {
+
+    private val subjectId: Long = checkNotNull(
+        savedStateHandle[MethodicaDestination.AssessmentForm.ARG_SUBJECT_ID]
+    )
+
+    private val assessmentId: Long? =
+        savedStateHandle.get<Long>(MethodicaDestination.AssessmentForm.ARG_ASSESSMENT_ID)
+            ?.takeIf { it != -1L }
 
     private val _uiState = MutableStateFlow(AssessmentFormUiState())
     val uiState: StateFlow<AssessmentFormUiState> = _uiState.asStateFlow()
@@ -119,23 +127,4 @@ class AssessmentFormViewModel(
         }
     }
 
-    companion object {
-        fun factory(
-            subjectId: Long,
-            assessmentId: Long?,
-            container: AppContainer
-        ): ViewModelProvider.Factory = viewModelFactory {
-            initializer {
-                AssessmentFormViewModel(
-                    subjectId                        = subjectId,
-                    assessmentId                     = assessmentId,
-                    getAssessmentUseCase             = container.getAssessmentUseCase,
-                    upsertAssessmentUseCase          = container.upsertAssessmentUseCase,
-                    observeTopicsBySubjectUseCase    = container.observeTopicsBySubjectUseCase,
-                    observeAssessmentTopicIdsUseCase = container.observeAssessmentTopicIdsUseCase,
-                    replaceAssessmentTopicsUseCase   = container.replaceAssessmentTopicsUseCase
-                )
-            }
-        }
-    }
 }

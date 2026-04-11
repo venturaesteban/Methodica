@@ -11,21 +11,70 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
 private val LightColorScheme = lightColorScheme(
-    primary   = MethodicaPurple,
-    secondary = MethodicaTeal,
-    tertiary  = MethodicaPurpleLight
+    primary = ScholarlyPrimary,
+    onPrimary = ScholarlyOnPrimary,
+    primaryContainer = ScholarlyPrimaryContainer,
+    onPrimaryContainer = ScholarlyOnPrimaryContainer,
+    secondary = ScholarlySecondary,
+    onSecondary = ScholarlyOnSecondary,
+    tertiary = ScholarlyTertiary,
+    onTertiary = ScholarlyOnTertiary,
+    tertiaryContainer = ScholarlyTertiaryContainer,
+    onTertiaryContainer = ScholarlyOnTertiaryContainer,
+    error = ScholarlyError,
+    onError = ScholarlyOnError,
+    errorContainer = ScholarlyErrorContainer,
+    onErrorContainer = ScholarlyOnErrorContainer,
+    background = ScholarlySurface,
+    onBackground = ScholarlyOnSurface,
+    surface = ScholarlySurface,
+    onSurface = ScholarlyOnSurface,
+    onSurfaceVariant = ScholarlyOnSurfaceVariant,
+    surfaceVariant = ScholarlySurfaceVariant,
+    surfaceContainerLowest = ScholarlySurfaceContainerLowest,
+    surfaceContainerLow = ScholarlySurfaceContainerLow,
+    surfaceContainer = ScholarlySurfaceContainer,
+    surfaceContainerHigh = ScholarlySurfaceContainerHigh,
+    surfaceContainerHighest = ScholarlySurfaceContainerHighest,
+    outline = ScholarlyOutline,
+    outlineVariant = ScholarlyOutlineVariant
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary   = MethodicaPurpleLight,
-    secondary = MethodicaTeal
+    primary = ScholarlyDarkPrimary,
+    onPrimary = ScholarlyDarkOnPrimary,
+    primaryContainer = ScholarlyDarkPrimaryContainer,
+    onPrimaryContainer = ScholarlyDarkOnPrimaryContainer,
+    secondary = ScholarlyDarkSecondary,
+    onSecondary = ScholarlyDarkOnSecondary,
+    tertiary = ScholarlyDarkTertiary,
+    onTertiary = ScholarlyDarkOnTertiary,
+    tertiaryContainer = ScholarlyDarkTertiaryContainer,
+    onTertiaryContainer = ScholarlyDarkOnTertiaryContainer,
+    error = ScholarlyDarkError,
+    onError = ScholarlyDarkOnError,
+    errorContainer = ScholarlyDarkErrorContainer,
+    onErrorContainer = ScholarlyDarkOnErrorContainer,
+    background = ScholarlyDarkSurface,
+    onBackground = ScholarlyDarkOnSurface,
+    surface = ScholarlyDarkSurface,
+    onSurface = ScholarlyDarkOnSurface,
+    onSurfaceVariant = ScholarlyDarkOnSurfaceVariant,
+    surfaceVariant = ScholarlyDarkSurfaceVariant,
+    surfaceContainerLowest = ScholarlyDarkSurfaceContainerLowest,
+    surfaceContainerLow = ScholarlyDarkSurfaceContainerLow,
+    surfaceContainer = ScholarlyDarkSurfaceContainer,
+    surfaceContainerHigh = ScholarlyDarkSurfaceContainerHigh,
+    surfaceContainerHighest = ScholarlyDarkSurfaceContainerHighest,
+    outline = ScholarlyDarkOutline,
+    outlineVariant = ScholarlyDarkOutlineVariant
 )
 
 @Composable
 fun MethodicaTheme(
     darkTheme:    Boolean = isSystemInDarkTheme(),
-    // Dynamic color uses the Android 12+ wallpaper-based palette when available
-    dynamicColor: Boolean = true,
+    // Disabled by default to keep the editorial identity fixed.
+    dynamicColor: Boolean = false,
     content:      @Composable () -> Unit
 ) {
     val colorScheme = when {

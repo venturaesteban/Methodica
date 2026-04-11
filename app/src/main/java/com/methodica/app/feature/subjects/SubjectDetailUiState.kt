@@ -9,5 +9,7 @@ data class SubjectDetailUiState(
     val topics:      List<Topic>       = emptyList(),
     val assessments: List<Assessment>  = emptyList(),
     val isLoading:   Boolean           = true,
-    val error:       String?           = null
+    val error:       String?           = null,
+    val estimatingTopicId: Long?       = null,
+    val topicEstimationMessage: String? = null
 )

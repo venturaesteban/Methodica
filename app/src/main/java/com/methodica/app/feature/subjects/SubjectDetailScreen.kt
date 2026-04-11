@@ -42,8 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.methodica.app.AppContainer
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.methodica.app.domain.model.Assessment
 import com.methodica.app.domain.model.Topic
 import java.text.SimpleDateFormat
@@ -52,17 +51,13 @@ import java.util.Locale
 
 @Composable
 fun SubjectDetailScreen(
-    subjectId:                Long,
-    container:                AppContainer,
     onNavigateBack:           () -> Unit,
     onNavigateToEditForm:     () -> Unit,
     onNavigateToTopicForm:    (Long?) -> Unit,
-    onNavigateToAssessmentForm: (Long?) -> Unit
+    onNavigateToAssessmentForm: (Long?) -> Unit,
+    onNavigateToAiAnalysis:   (Long) -> Unit
 ) {
-    val viewModel: SubjectDetailViewModel = viewModel(
-        key     = "subjectDetail_$subjectId",
-        factory = SubjectDetailViewModel.factory(subjectId, container)
-    )
+    val viewModel: SubjectDetailViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     var confirmDeleteSubject by remember { mutableStateOf(false) }
@@ -132,6 +127,12 @@ fun SubjectDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "${subject.degreeName} - Curso ${subject.courseYear}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -147,12 +148,32 @@ fun SubjectDetailScreen(
                     HorizontalDivider(modifier = Modifier.weight(1f))
                 }
             }
+            uiState.topicEstimationMessage?.let { message ->
+                item {
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            uiState.error?.let { errorText ->
+                item {
+                    Text(
+                        text = errorText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
             if (uiState.topics.isEmpty()) {
                 item { Text("Sin temas aún", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else {
                 items(uiState.topics, key = { "topic_${it.id}" }) { topic ->
                     TopicItem(
                         topic    = topic,
+                        isEstimating = uiState.estimatingTopicId == topic.id,
+                        onEstimateAi = { viewModel.onEstimateTopicWithAi(topic) },
                         onEdit   = { onNavigateToTopicForm(topic.id) },
                         onDelete = { topicPendingDelete = topic }
                     )
@@ -176,6 +197,7 @@ fun SubjectDetailScreen(
                 items(uiState.assessments, key = { "assessment_${it.id}" }) { assessment ->
                     AssessmentItem(
                         assessment = assessment,
+                        onAiAnalysis = { onNavigateToAiAnalysis(assessment.id) },
                         onEdit     = { onNavigateToAssessmentForm(assessment.id) },
                         onDelete   = { assessmentPendingDelete = assessment }
                     )
@@ -240,7 +262,13 @@ fun SubjectDetailScreen(
 }
 
 @Composable
-private fun TopicItem(topic: Topic, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun TopicItem(
+    topic: Topic,
+    isEstimating: Boolean,
+    onEstimateAi: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
@@ -251,6 +279,9 @@ private fun TopicItem(topic: Topic, onEdit: () -> Unit, onDelete: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            TextButton(onClick = onEstimateAi, enabled = !isEstimating) {
+                Text(if (isEstimating) "IA..." else "IA")
+            }
             IconButton(onClick = onEdit)   { Icon(Icons.Filled.Edit,   contentDescription = "Editar") }
             IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Eliminar") }
         }
@@ -258,7 +289,12 @@ private fun TopicItem(topic: Topic, onEdit: () -> Unit, onDelete: () -> Unit) {
 }
 
 @Composable
-private fun AssessmentItem(assessment: Assessment, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun AssessmentItem(
+    assessment: Assessment,
+    onAiAnalysis: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     val dateText = remember(assessment.date) {
         SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(assessment.date))
     }
@@ -272,6 +308,7 @@ private fun AssessmentItem(assessment: Assessment, onEdit: () -> Unit, onDelete:
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            TextButton(onClick = onAiAnalysis) { Text("IA") }
             IconButton(onClick = onEdit)   { Icon(Icons.Filled.Edit,   contentDescription = "Editar") }
             IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Eliminar") }
         }

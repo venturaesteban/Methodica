@@ -24,8 +24,14 @@ Usa EXCLUSIVAMENTE las siguientes tecnologías:
 - Usa los ViewModels únicamente para orquestar estado y eventos, sin lógica de dominio.
 
 # Restricciones Estrictas del MVP (Límites)
-- PROHIBIDO implementar login o autenticación.
-- PROHIBIDO usar sincronización cloud, backend propio o IA.
+- PROHIBIDO implementar login o autenticación de usuarios.
+- PROHIBIDO usar sincronización cloud o backend propio.
+- **PERMITIDO**: Integración de proveedores de IA (OpenAI, Anthropic, Google, etc.) configurable por el usuario:
+  - El usuario debe proporcionar su propia clave API o credenciales.
+  - La app NO almacena credenciales en cloud; se guardan LOCALMENTE en DataStore (encriptado).
+  - La app NO realiza llamadas a backend propio; comunica directamente con APIs del proveedor.
+  - El usuario es responsable de gestionar su uso, cuota y costos.
+  - Implementa validación de conexión y manejo seguro de errores.
 - PROHIBIDO subir archivos a la nube. Guarda los materiales solo como URI local o enlace web.
 - Escribe código claro y simple. Evita la sobreingeniería y los refactors masivos.
 - Comenta el código SOLO para explicar el "por qué" de una decisión compleja, nunca el "qué".

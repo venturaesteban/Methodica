@@ -13,6 +13,10 @@ class SavePlanningSettingsUseCase(
         require(settings.finalReviewDays <= settings.bufferDaysBeforeExam) {
             "Los días de repaso final no pueden superar el colchón."
         }
+        require(settings.studentAge in 10..100) { "La edad del estudiante debe estar entre 10 y 100." }
+        require(settings.readingComprehensionLevel in 1..5) {
+            "La comprensión lectora debe estar entre 1 y 5."
+        }
         repository.saveSettings(settings)
     }
 }

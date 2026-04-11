@@ -40,8 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.methodica.app.AppContainer
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.methodica.app.domain.model.AssessmentType
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -50,15 +49,10 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AssessmentFormScreen(
-    subjectId:      Long,
     assessmentId:   Long?,
-    container:      AppContainer,
     onNavigateBack: () -> Unit
 ) {
-    val viewModel: AssessmentFormViewModel = viewModel(
-        key     = "assessmentForm_${subjectId}_$assessmentId",
-        factory = AssessmentFormViewModel.factory(subjectId, assessmentId, container)
-    )
+    val viewModel: AssessmentFormViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(uiState.isSaved) {

@@ -6,27 +6,44 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// Tipografía base. En fases posteriores se puede sustituir por una fuente personalizada.
+// TODO: When font assets are added in res/font, map these families to real Manrope/Inter files.
+private val ManropeFamily = FontFamily.SansSerif
+private val InterFamily = FontFamily.SansSerif
+
 val MethodicaTypography = Typography(
-    bodyLarge = TextStyle(
-        fontFamily   = FontFamily.Default,
-        fontWeight   = FontWeight.Normal,
-        fontSize     = 16.sp,
-        lineHeight   = 24.sp,
-        letterSpacing = 0.5.sp
+    displayLarge = TextStyle(
+        fontFamily = ManropeFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 56.sp,
+        lineHeight = 60.sp,
+        letterSpacing = (-0.3).sp
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = ManropeFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        letterSpacing = (-0.1).sp
     ),
     titleLarge = TextStyle(
-        fontFamily   = FontFamily.Default,
-        fontWeight   = FontWeight.SemiBold,
-        fontSize     = 22.sp,
-        lineHeight   = 28.sp,
+        fontFamily = InterFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 22.sp,
+        lineHeight = 30.sp,
         letterSpacing = 0.sp
     ),
+    bodyMedium = TextStyle(
+        fontFamily = InterFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 14.sp,
+        lineHeight = 22.sp,
+        letterSpacing = 0.1.sp
+    ),
     labelSmall = TextStyle(
-        fontFamily   = FontFamily.Default,
-        fontWeight   = FontWeight.Medium,
-        fontSize     = 11.sp,
-        lineHeight   = 16.sp,
-        letterSpacing = 0.5.sp
+        fontFamily = InterFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.8.sp
     )
 )

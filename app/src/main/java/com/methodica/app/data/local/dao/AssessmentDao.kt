@@ -19,6 +19,9 @@ interface AssessmentDao {
     @Query("SELECT * FROM assessments WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): AssessmentEntity?
 
+    @Query("SELECT * FROM assessments WHERE date BETWEEN :startDate AND :endDate ORDER BY date ASC")
+    suspend fun getByDateRange(startDate: Long, endDate: Long): List<AssessmentEntity>
+
     @Upsert
     suspend fun upsert(assessment: AssessmentEntity): Long
 

@@ -19,6 +19,7 @@ local.properties
 # ===== Keystore =====
 *.jks
 *.keystore
+keystore.properties
 
 # ===== Generated files =====
 gen/
