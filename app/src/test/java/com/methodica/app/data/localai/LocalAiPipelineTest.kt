@@ -8,7 +8,6 @@ import com.methodica.app.data.local.entity.AiChunkEmbeddingEntity
 import com.methodica.app.data.local.entity.AiDocumentChunkEntity
 import com.methodica.app.data.local.entity.AiIndexingRunEntity
 import com.methodica.app.data.localai.pipeline.DefaultLocalAiIngestionPipeline
-import com.methodica.app.data.localai.provider.OnDeviceEmbeddingProvider
 import com.methodica.app.data.localai.provider.ParagraphChunkingStrategy
 import com.methodica.app.data.localai.provider.RoomBackedRetrievalIndex
 import com.methodica.app.domain.ai.local.ChunkEmbedding
@@ -51,7 +50,7 @@ class LocalAiPipelineTest {
     fun `retrieval aplica filtros academicos`() = runTest {
         val chunkDao = FakeChunkDao()
         val embeddingDao = FakeEmbeddingDao(chunkDao)
-        val provider = OnDeviceEmbeddingProvider()
+        val provider = FakeSemanticEmbeddingProvider()
         val index = RoomBackedRetrievalIndex(chunkDao, embeddingDao, provider)
 
         val a = sampleChunk("a", ChunkSourceRef(10, 20, 30, 40, null), "derivadas e integrales")
@@ -70,6 +69,7 @@ class LocalAiPipelineTest {
         val materialRepo = FakeMaterialRepository()
         val chunkDao = FakeChunkDao()
         val runDao = FakeRunDao()
+        val embeddingDao = FakeEmbeddingDao(chunkDao)
         val provider = CountingEmbeddingProvider()
         val pipeline = DefaultLocalAiIngestionPipeline(
             materialRepository = materialRepo,
@@ -77,6 +77,7 @@ class LocalAiPipelineTest {
             embeddingProvider = provider,
             retrievalIndex = InMemoryRetrievalIndex(chunkDao),
             chunkDao = chunkDao,
+            embeddingDao = embeddingDao,
             indexingRunDao = runDao
         )
 
@@ -85,6 +86,38 @@ class LocalAiPipelineTest {
         pipeline.reindexMaterial(1, "TEST").getOrThrow()
 
         assertEquals(first, provider.calls)
+    }
+
+    @Test
+    fun `reindexa cuando version de embedding cambia`() = runTest {
+        val materialRepo = FakeMaterialRepository()
+        val chunkDao = FakeChunkDao()
+        val runDao = FakeRunDao()
+        val embeddingDao = FakeEmbeddingDao(chunkDao)
+        val firstProvider = CountingEmbeddingProvider(modelVersion = "semantic-v1")
+        val secondProvider = CountingEmbeddingProvider(modelVersion = "semantic-v2")
+
+        DefaultLocalAiIngestionPipeline(
+            materialRepository = materialRepo,
+            chunkingStrategy = ParagraphChunkingStrategy(),
+            embeddingProvider = firstProvider,
+            retrievalIndex = InMemoryRetrievalIndex(chunkDao),
+            chunkDao = chunkDao,
+            embeddingDao = embeddingDao,
+            indexingRunDao = runDao
+        ).reindexMaterial(1, "TEST").getOrThrow()
+
+        DefaultLocalAiIngestionPipeline(
+            materialRepository = materialRepo,
+            chunkingStrategy = ParagraphChunkingStrategy(),
+            embeddingProvider = secondProvider,
+            retrievalIndex = InMemoryRetrievalIndex(chunkDao),
+            chunkDao = chunkDao,
+            embeddingDao = embeddingDao,
+            indexingRunDao = runDao
+        ).reindexMaterial(1, "TEST").getOrThrow()
+
+        assertTrue(secondProvider.calls > 0)
     }
 
     private fun sampleChunk(id: String, source: ChunkSourceRef, content: String) = TextChunk(
@@ -100,9 +133,11 @@ class LocalAiPipelineTest {
         updatedAt = 1L
     )
 
-    private class CountingEmbeddingProvider : EmbeddingProvider {
+    private class CountingEmbeddingProvider(
+        override val modelVersion: String = "test-semantic-v2"
+    ) : EmbeddingProvider {
         var calls = 0
-        private val delegate = OnDeviceEmbeddingProvider()
+        private val delegate = FakeSemanticEmbeddingProvider(modelVersion)
         override suspend fun embed(chunks: List<TextChunk>): Result<List<ChunkEmbedding>> {
             calls += chunks.size
             return delegate.embed(chunks)
@@ -205,9 +240,10 @@ class LocalAiPipelineTest {
 
         override suspend fun deleteByChunkIds(chunkIds: List<Long>) { rows.removeAll { it.chunkId in chunkIds } }
 
-        override suspend fun getIndexedRows(subjectId: Long, assessmentId: Long?, topicId: Long?, materialId: Long?, documentId: Long?): List<EmbeddingChunkRow> =
+        override suspend fun getIndexedRows(subjectId: Long, assessmentId: Long?, topicId: Long?, materialId: Long?, documentId: Long?, modelVersion: String): List<EmbeddingChunkRow> =
             rows.mapNotNull { emb ->
                 val chunk = chunkDao.byId(emb.chunkId) ?: return@mapNotNull null
+                if (emb.modelVersion != modelVersion) return@mapNotNull null
                 if (chunk.subjectId != subjectId) return@mapNotNull null
                 if (assessmentId != null && chunk.assessmentId != assessmentId) return@mapNotNull null
                 if (topicId != null && chunk.topicId != topicId) return@mapNotNull null
@@ -215,5 +251,29 @@ class LocalAiPipelineTest {
                 if (documentId != null && chunk.documentId != documentId) return@mapNotNull null
                 EmbeddingChunkRow(chunk.externalId, chunk.subjectId, chunk.assessmentId, chunk.topicId, chunk.materialId, chunk.documentId, chunk.content, emb.vector, emb.dimensions)
             }
+
+        override suspend fun getModelVersionsForChunkIds(chunkIds: List<Long>): List<String> =
+            rows.filter { it.chunkId in chunkIds }.map { it.modelVersion }.distinct()
+    }
+
+    private class FakeSemanticEmbeddingProvider(
+        override val modelVersion: String = "test-semantic-v2"
+    ) : EmbeddingProvider {
+        override suspend fun embed(chunks: List<TextChunk>): Result<List<ChunkEmbedding>> = runCatching {
+            chunks.map { chunk ->
+                val tokens = chunk.content.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+                val vector = FloatArray(3)
+                tokens.forEach {
+                    when {
+                        it.contains("integral") || it.contains("derivad") -> vector[0] += 1f
+                        it.contains("historia") || it.contains("contempor") -> vector[1] += 1f
+                        else -> vector[2] += 0.3f
+                    }
+                }
+                val norm = kotlin.math.sqrt(vector.fold(0f) { acc, value -> acc + (value * value) }.toDouble()).toFloat().takeIf { it > 0f } ?: 1f
+                for (i in vector.indices) vector[i] = vector[i] / norm
+                ChunkEmbedding(chunk.externalId, vector.size, vector)
+            }
+        }
     }
 }

@@ -8,7 +8,6 @@ import com.methodica.app.domain.ai.local.ActionProvider
 import com.methodica.app.domain.ai.local.ActionRequest
 import com.methodica.app.domain.ai.local.ChunkEmbedding
 import com.methodica.app.domain.ai.local.ChunkingStrategy
-import com.methodica.app.domain.ai.local.EmbeddingProvider
 import com.methodica.app.domain.ai.local.ReasoningProvider
 import com.methodica.app.domain.ai.local.ReasoningRequest
 import com.methodica.app.domain.ai.local.RetrievalHit
@@ -105,43 +104,10 @@ class ParagraphChunkingStrategy @Inject constructor() : ChunkingStrategy {
 }
 
 @Singleton
-class OnDeviceEmbeddingProvider @Inject constructor() : EmbeddingProvider {
-    override suspend fun embed(chunks: List<TextChunk>): Result<List<ChunkEmbedding>> = runCatching {
-        chunks.map { chunk ->
-            val vector = FloatArray(DIMENSIONS)
-            val tokens = TOKEN_REGEX.findAll(chunk.content.lowercase()).map { it.value }.toList()
-            val sizeNorm = if (tokens.isEmpty()) 1f else 1f / tokens.size
-            tokens.forEach { token ->
-                val hash = token.hashCode()
-                val idx = (hash and Int.MAX_VALUE) % DIMENSIONS
-                val sign = if (hash % 2 == 0) 1f else -1f
-                vector[idx] += sign * sizeNorm
-            }
-            normalize(vector)
-            ChunkEmbedding(chunkExternalId = chunk.externalId, dimensions = DIMENSIONS, values = vector)
-        }
-    }
-
-    private fun normalize(values: FloatArray) {
-        var normSq = 0f
-        values.forEach { normSq += it * it }
-        val norm = sqrt(normSq).takeIf { it > 0f } ?: return
-        for (i in values.indices) {
-            values[i] /= norm
-        }
-    }
-
-    private companion object {
-        const val DIMENSIONS = 256
-        val TOKEN_REGEX = Regex("[\\p{L}\\p{N}_-]{2,}")
-    }
-}
-
-@Singleton
 class RoomBackedRetrievalIndex @Inject constructor(
     private val chunkDao: AiDocumentChunkDao,
     private val embeddingDao: AiChunkEmbeddingDao,
-    private val embeddingProvider: OnDeviceEmbeddingProvider
+    private val embeddingProvider: MediaPipeTextEmbeddingProvider
 ) : RetrievalIndex {
     override suspend fun upsert(chunks: List<TextChunk>, embeddings: List<ChunkEmbedding>): Result<Unit> = runCatching {
         if (chunks.isEmpty()) return@runCatching
@@ -172,7 +138,7 @@ class RoomBackedRetrievalIndex @Inject constructor(
             val e = embeddingByExternalId[chunk.externalId] ?: return@mapNotNull null
             AiChunkEmbeddingEntity(
                 chunkId = chunk.id,
-                modelVersion = MODEL_VERSION,
+                modelVersion = embeddingProvider.modelVersion,
                 vector = e.values.joinToString(",") { value -> value.toString() },
                 dimensions = e.dimensions,
                 updatedAt = now
@@ -202,7 +168,8 @@ class RoomBackedRetrievalIndex @Inject constructor(
             assessmentId = request.assessmentId,
             topicId = request.topicId,
             materialId = request.materialId,
-            documentId = request.documentId
+            documentId = request.documentId,
+            modelVersion = embeddingProvider.modelVersion
         )
 
         candidates.mapNotNull { row ->
@@ -246,10 +213,6 @@ class RoomBackedRetrievalIndex @Inject constructor(
         }
         val denom = sqrt(qNorm) * sqrt(cNorm)
         return if (denom <= 0f) 0f else dot / denom
-    }
-
-    private companion object {
-        const val MODEL_VERSION = "hashing-embedding-v1"
     }
 }
 

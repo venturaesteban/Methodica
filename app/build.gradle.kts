@@ -118,6 +118,7 @@ dependencies {
     implementation(libs.pdfbox.android)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.google.play.services.tasks)
+    implementation(libs.mediapipe.tasks.text)
 
     // Hilt DI
     implementation(libs.hilt.android)
