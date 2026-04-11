@@ -13,6 +13,9 @@ interface LocalAiModelStateDao {
     @Query("SELECT * FROM local_ai_model_state")
     fun observeAll(): Flow<List<LocalAiModelStateEntity>>
 
+    @Query("SELECT * FROM local_ai_model_state WHERE modelType = :modelType LIMIT 1")
+    suspend fun getByModelType(modelType: String): LocalAiModelStateEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(state: LocalAiModelStateEntity)
 }

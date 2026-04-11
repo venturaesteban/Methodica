@@ -13,8 +13,11 @@ data class LocalAiModelSpec(
     val type: LocalAiModelType,
     val version: String,
     val assetPath: String,
+    val localRelativePath: String,
     val requiredDiskBytes: Long,
-    val requiredRamMb: Int
+    val requiredRamMb: Int,
+    val expectedSha256: String? = null,
+    val downloadUrl: String? = null
 )
 
 data class DeviceCompatibilityReport(
@@ -26,6 +29,8 @@ data class DeviceCompatibilityReport(
 
 enum class RuntimeAvailability {
     UNINITIALIZED,
+    DOWNLOADING,
+    INITIALIZING,
     READY,
     ERROR
 }
@@ -41,6 +46,7 @@ interface LocalModelRuntimeManager {
     fun observeRuntimeState(): Flow<LocalModelRuntimeState>
     suspend fun evaluateDeviceCompatibility(spec: LocalAiModelSpec): DeviceCompatibilityReport
     suspend fun ensureModelReady(spec: LocalAiModelSpec): Result<Unit>
+    suspend fun markModelError(type: LocalAiModelType, message: String)
     suspend fun releaseModels()
 }
 
@@ -99,6 +105,7 @@ interface ChunkingStrategy {
 }
 
 interface EmbeddingProvider {
+    val modelVersion: String
     suspend fun embed(chunks: List<TextChunk>): Result<List<ChunkEmbedding>>
 }
 
