@@ -255,12 +255,101 @@ object AppDatabaseMigrations {
         }
     }
 
-    val ALL = arrayOf(
+    
+
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `ai_document_chunks` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `externalId` TEXT NOT NULL,
+                    `subjectId` INTEGER NOT NULL,
+                    `assessmentId` INTEGER,
+                    `topicId` INTEGER,
+                    `materialId` INTEGER,
+                    `documentId` INTEGER,
+                    `sequence` INTEGER NOT NULL,
+                    `sourceLabel` TEXT NOT NULL,
+                    `content` TEXT NOT NULL,
+                    `tokenEstimate` INTEGER NOT NULL,
+                    `contentHash` TEXT NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    FOREIGN KEY(`subjectId`) REFERENCES `subjects`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                    FOREIGN KEY(`assessmentId`) REFERENCES `assessments`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                    FOREIGN KEY(`topicId`) REFERENCES `topics`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                    FOREIGN KEY(`materialId`) REFERENCES `materials`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                    FOREIGN KEY(`documentId`) REFERENCES `ai_documents`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ai_document_chunks_externalId` ON `ai_document_chunks` (`externalId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_document_chunks_subjectId` ON `ai_document_chunks` (`subjectId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_document_chunks_assessmentId` ON `ai_document_chunks` (`assessmentId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_document_chunks_topicId` ON `ai_document_chunks` (`topicId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_document_chunks_materialId` ON `ai_document_chunks` (`materialId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_document_chunks_documentId` ON `ai_document_chunks` (`documentId`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `ai_chunk_embeddings` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `chunkId` INTEGER NOT NULL,
+                    `modelVersion` TEXT NOT NULL,
+                    `vector` TEXT NOT NULL,
+                    `dimensions` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    FOREIGN KEY(`chunkId`) REFERENCES `ai_document_chunks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ai_chunk_embeddings_chunkId` ON `ai_chunk_embeddings` (`chunkId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_chunk_embeddings_updatedAt` ON `ai_chunk_embeddings` (`updatedAt`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `ai_indexing_runs` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `subjectId` INTEGER NOT NULL,
+                    `assessmentId` INTEGER,
+                    `materialId` INTEGER,
+                    `status` TEXT NOT NULL,
+                    `trigger` TEXT NOT NULL,
+                    `startedAt` INTEGER NOT NULL,
+                    `completedAt` INTEGER,
+                    `errorMessage` TEXT
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_indexing_runs_subjectId` ON `ai_indexing_runs` (`subjectId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_indexing_runs_assessmentId` ON `ai_indexing_runs` (`assessmentId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_indexing_runs_status` ON `ai_indexing_runs` (`status`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `local_ai_model_state` (
+                    `modelType` TEXT NOT NULL,
+                    `modelId` TEXT NOT NULL,
+                    `modelVersion` TEXT NOT NULL,
+                    `status` TEXT NOT NULL,
+                    `localPath` TEXT NOT NULL,
+                    `requiredDiskBytes` INTEGER NOT NULL,
+                    `requiredRamMb` INTEGER NOT NULL,
+                    `lastError` TEXT,
+                    `updatedAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`modelType`)
+                )
+                """.trimIndent()
+            )
+        }
+    }
+val ALL = arrayOf(
         MIGRATION_2_3,
         MIGRATION_3_4,
         MIGRATION_4_5,
         MIGRATION_5_6,
         MIGRATION_6_7,
-        MIGRATION_7_8
+        MIGRATION_7_8,
+        MIGRATION_8_9
     )
 }

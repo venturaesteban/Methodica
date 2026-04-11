@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
+@Deprecated("Legacy remote provider. Phase out after local runtime migration.")
 class ExternalLlmProvider @Inject constructor() : LlmProvider {
 
     private companion object {

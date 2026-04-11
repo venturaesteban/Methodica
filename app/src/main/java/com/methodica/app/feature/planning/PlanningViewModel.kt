@@ -2,12 +2,16 @@ package com.methodica.app.feature.planning
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.methodica.app.domain.ai.model.AiPlanningInsight
+import com.methodica.app.domain.ai.model.ComplexityAnalysis
+import com.methodica.app.domain.ai.model.ExamScopeInference
+import com.methodica.app.domain.ai.model.PlanningRecommendation
+import com.methodica.app.domain.ai.workflow.AiWorkflowCoordinator
+import com.methodica.app.domain.ai.workflow.AnalyzeAssessmentRequest
 import com.methodica.app.domain.model.Assessment
 import com.methodica.app.domain.model.AiExecutionMode
-import com.methodica.app.domain.usecase.ai.ObserveAiProviderSettingsUseCase
 import com.methodica.app.domain.usecase.assessment.ObserveAllAssessmentsUseCase
 import com.methodica.app.domain.usecase.assessmenttopic.ObserveAssessmentTopicsUseCase
-import com.methodica.app.domain.usecase.ai.AnalyzeAssessmentWithAiUseCase
 import com.methodica.app.domain.usecase.planning.GenerateAssessmentPlanUseCase
 import com.methodica.app.domain.usecase.subject.ObserveSubjectsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,12 +25,11 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class PlanningViewModel @Inject constructor(
-    private val observeSubjectsUseCase:          ObserveSubjectsUseCase,
-    private val observeAiProviderSettingsUseCase: ObserveAiProviderSettingsUseCase,
-    private val observeAllAssessmentsUseCase:    ObserveAllAssessmentsUseCase,
-    private val observeAssessmentTopicsUseCase:  ObserveAssessmentTopicsUseCase,
-    private val analyzeAssessmentWithAiUseCase:  AnalyzeAssessmentWithAiUseCase,
-    private val generateAssessmentPlanUseCase:   GenerateAssessmentPlanUseCase
+    private val observeSubjectsUseCase: ObserveSubjectsUseCase,
+    private val observeAllAssessmentsUseCase: ObserveAllAssessmentsUseCase,
+    private val observeAssessmentTopicsUseCase: ObserveAssessmentTopicsUseCase,
+    private val aiWorkflowCoordinator: AiWorkflowCoordinator,
+    private val generateAssessmentPlanUseCase: GenerateAssessmentPlanUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlanningUiState())
@@ -41,15 +44,17 @@ class PlanningViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            observeAiProviderSettingsUseCase().collect { settings ->
+            aiWorkflowCoordinator.observeCapabilities().collect { capability ->
                 _uiState.update { state ->
-                    val currentMode = if (!settings.isEnabledAndConfigured && state.aiExecutionMode == AiExecutionMode.EXTERNAL) {
+                    val currentMode = if (!capability.canUseExternalAi && state.aiExecutionMode == AiExecutionMode.EXTERNAL) {
                         AiExecutionMode.HEURISTIC
                     } else {
                         state.aiExecutionMode
                     }
                     state.copy(
-                        canUseExternalAi = settings.isEnabledAndConfigured,
+                        canUseExternalAi = capability.canUseExternalAi,
+                        localModelsReady = capability.localModelsReady,
+                        runtimeMessage = capability.runtimeMessage,
                         aiExecutionMode = currentMode
                     )
                 }
@@ -121,17 +126,42 @@ class PlanningViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isAnalyzingAi = true, aiError = null) }
-            val result = analyzeAssessmentWithAiUseCase(
-                assessmentId = assessment.id,
-                rawText = text,
-                executionMode = _uiState.value.aiExecutionMode,
-                sourceLabel = assessment.title
+            val result = aiWorkflowCoordinator.analyzeAssessment(
+                AnalyzeAssessmentRequest(
+                    assessmentId = assessment.id,
+                    rawText = text,
+                    executionMode = _uiState.value.aiExecutionMode,
+                    sourceLabel = assessment.title
+                )
             )
             if (result.isSuccess) {
+                val stored = result.getOrThrow()
                 _uiState.update {
                     it.copy(
                         isAnalyzingAi = false,
-                        lastAiInsight = result.getOrNull(),
+                        lastAiInsight = AiPlanningInsight(
+                            scopeInference = ExamScopeInference(
+                                estimatedScope = stored.scope.estimatedScope,
+                                includedTopicNames = stored.topicComplexities.filter { item -> item.isIncludedInScope }.map { item -> item.topicName },
+                                justification = stored.scope.justification,
+                                confidence = stored.scope.confidence,
+                                requiresConfirmation = stored.scope.requiresUserConfirmation
+                            ),
+                            complexityAnalysis = ComplexityAnalysis(
+                                topics = emptyList(),
+                                overallComplexity = stored.topicComplexities.map { item -> item.complexityLevel }.average().toInt().coerceAtLeast(1),
+                                confidence = stored.analysis.confidence
+                            ),
+                            recommendation = PlanningRecommendation(
+                                recommendedTopicOrder = stored.topicComplexities.sortedByDescending { item -> item.priority }.map { item -> item.topicName },
+                                extraReviewTopics = stored.topicComplexities.filter { item -> item.requiresSpacedReview }.map { item -> item.topicName },
+                                warnings = emptyList(),
+                                confidence = stored.analysis.confidence
+                            ),
+                            summary = stored.analysis.summary,
+                            confidence = stored.analysis.confidence,
+                            requiresConfirmation = stored.analysis.requiresConfirmation
+                        ),
                         aiError = null
                     )
                 }
@@ -158,5 +188,4 @@ class PlanningViewModel @Inject constructor(
             }
         }
     }
-
 }

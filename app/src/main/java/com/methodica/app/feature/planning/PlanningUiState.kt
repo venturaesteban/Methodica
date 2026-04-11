@@ -17,6 +17,8 @@ data class PlanningUiState(
     val aiInputText:        String = "",
     val aiExecutionMode:    AiExecutionMode = AiExecutionMode.HEURISTIC,
     val canUseExternalAi:   Boolean = false,
+    val localModelsReady:   Boolean = false,
+    val runtimeMessage:     String? = null,
     val isAnalyzingAi:      Boolean = false,
     val lastAiInsight:      AiPlanningInsight? = null,
     val aiError:            String? = null,

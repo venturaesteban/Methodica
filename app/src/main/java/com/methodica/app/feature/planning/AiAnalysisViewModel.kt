@@ -4,19 +4,14 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.methodica.app.core.navigation.MethodicaDestination
+import com.methodica.app.domain.ai.workflow.AiWorkflowCoordinator
+import com.methodica.app.domain.ai.workflow.AnalyzeAssessmentRequest
+import com.methodica.app.domain.ai.workflow.ApplyAnalysisEditsRequest
 import com.methodica.app.domain.model.AiExecutionMode
 import com.methodica.app.domain.model.TopicComplexityAnalysis
-import com.methodica.app.domain.usecase.ai.AnalyzeAssessmentWithAiUseCase
-import com.methodica.app.domain.usecase.ai.ApplyAiComplexityToTopicsUseCase
-import com.methodica.app.domain.usecase.ai.GetLatestAiAnalysisForAssessmentUseCase
-import com.methodica.app.domain.usecase.ai.ObserveAiProviderSettingsUseCase
-import com.methodica.app.domain.usecase.ai.SaveAiAnalysisEditsUseCase
 import com.methodica.app.domain.usecase.assessment.ObserveAllAssessmentsUseCase
-import com.methodica.app.domain.usecase.assessmenttopic.ObserveAssessmentTopicsUseCase
-import com.methodica.app.domain.usecase.planning.GenerateAssessmentPlanUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,14 +21,8 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class AiAnalysisViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val observeAiProviderSettingsUseCase: ObserveAiProviderSettingsUseCase,
     private val observeAllAssessmentsUseCase: ObserveAllAssessmentsUseCase,
-    private val observeAssessmentTopicsUseCase: ObserveAssessmentTopicsUseCase,
-    private val analyzeAssessmentWithAiUseCase: AnalyzeAssessmentWithAiUseCase,
-    private val getLatestAiAnalysisForAssessmentUseCase: GetLatestAiAnalysisForAssessmentUseCase,
-    private val saveAiAnalysisEditsUseCase: SaveAiAnalysisEditsUseCase,
-    private val applyAiComplexityToTopicsUseCase: ApplyAiComplexityToTopicsUseCase,
-    private val generateAssessmentPlanUseCase: GenerateAssessmentPlanUseCase
+    private val aiWorkflowCoordinator: AiWorkflowCoordinator
 ) : ViewModel() {
 
     private val assessmentIdArg: Long? =
@@ -43,25 +32,24 @@ class AiAnalysisViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(AiAnalysisUiState())
     val uiState: StateFlow<AiAnalysisUiState> = _uiState.asStateFlow()
 
-    private var topicsJob: Job? = null
-    private var latestTopicsForAssessment: List<com.methodica.app.domain.model.Topic> = emptyList()
-
     init {
-        observeAiSettings()
+        observeCapabilities()
         observeAssessments()
     }
 
-    private fun observeAiSettings() {
+    private fun observeCapabilities() {
         viewModelScope.launch {
-            observeAiProviderSettingsUseCase().collect { settings ->
+            aiWorkflowCoordinator.observeCapabilities().collect { capability ->
                 _uiState.update { state ->
-                    val nextMode = if (!settings.isEnabledAndConfigured && state.aiExecutionMode == AiExecutionMode.EXTERNAL) {
+                    val nextMode = if (!capability.canUseExternalAi && state.aiExecutionMode == AiExecutionMode.EXTERNAL) {
                         AiExecutionMode.HEURISTIC
                     } else {
                         state.aiExecutionMode
                     }
                     state.copy(
-                        canUseExternalAi = settings.isEnabledAndConfigured,
+                        canUseExternalAi = capability.canUseExternalAi,
+                        localModelsReady = capability.localModelsReady,
+                        runtimeMessage = capability.runtimeMessage,
                         aiExecutionMode = nextMode
                     )
                 }
@@ -100,18 +88,10 @@ class AiAnalysisViewModel @Inject constructor(
             )
         }
 
-        topicsJob?.cancel()
-        topicsJob = viewModelScope.launch {
-            observeAssessmentTopicsUseCase(assessmentId).collect { topics ->
-                latestTopicsForAssessment = topics
-            }
-        }
-
         viewModelScope.launch {
-            val latest = getLatestAiAnalysisForAssessmentUseCase(assessmentId)
-            if (latest != null) {
-                _uiState.update {
-                    it.copy(
+            aiWorkflowCoordinator.getLatestAnalysis(assessmentId)?.let { latest ->
+                _uiState.update { state ->
+                    state.copy(
                         analysisId = latest.analysis.id,
                         estimatedScope = latest.scope.estimatedScope,
                         justification = latest.scope.justification,
@@ -162,8 +142,7 @@ class AiAnalysisViewModel @Inject constructor(
         _uiState.update { state ->
             state.copy(
                 topicEdits = state.topicEdits.map { topic ->
-                    if (topic.topicName == topicName) topic.copy(isIncludedInScope = !topic.isIncludedInScope)
-                    else topic
+                    if (topic.topicName == topicName) topic.copy(isIncludedInScope = !topic.isIncludedInScope) else topic
                 }
             )
         }
@@ -173,8 +152,7 @@ class AiAnalysisViewModel @Inject constructor(
         _uiState.update { state ->
             state.copy(
                 topicEdits = state.topicEdits.map { topic ->
-                    if (topic.topicName == topicName) topic.copy(complexityLevel = value.coerceIn(1, 5))
-                    else topic
+                    if (topic.topicName == topicName) topic.copy(complexityLevel = value.coerceIn(1, 5)) else topic
                 }
             )
         }
@@ -184,8 +162,7 @@ class AiAnalysisViewModel @Inject constructor(
         _uiState.update { state ->
             state.copy(
                 topicEdits = state.topicEdits.map { topic ->
-                    if (topic.topicName == topicName) topic.copy(recommendedHours = value.coerceAtLeast(1))
-                    else topic
+                    if (topic.topicName == topicName) topic.copy(recommendedHours = value.coerceAtLeast(1)) else topic
                 }
             )
         }
@@ -195,41 +172,21 @@ class AiAnalysisViewModel @Inject constructor(
         val assessment = _uiState.value.selectedAssessment ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isAnalyzing = true, error = null, infoMessage = null) }
-            val result = analyzeAssessmentWithAiUseCase(
-                assessmentId = assessment.id,
-                rawText = _uiState.value.sourceText,
-                executionMode = _uiState.value.aiExecutionMode,
-                sourceLabel = assessment.title
+            val result = aiWorkflowCoordinator.analyzeAssessment(
+                AnalyzeAssessmentRequest(
+                    assessmentId = assessment.id,
+                    rawText = _uiState.value.sourceText,
+                    executionMode = _uiState.value.aiExecutionMode,
+                    sourceLabel = assessment.title
+                )
             )
             if (result.isSuccess) {
-                val latest = getLatestAiAnalysisForAssessmentUseCase(assessment.id)
-                if (latest != null) {
-                    _uiState.update {
-                        it.copy(
-                            isAnalyzing = false,
-                            analysisId = latest.analysis.id,
-                            estimatedScope = latest.scope.estimatedScope,
-                            justification = latest.scope.justification,
-                            confidence = latest.analysis.confidence,
-                            requiresConfirmation = latest.analysis.requiresConfirmation,
-                            topicEdits = latest.topicComplexities.map { item ->
-                                EditableTopicComplexity(
-                                    id = item.id,
-                                    topicName = item.topicName,
-                                    isIncludedInScope = item.isIncludedInScope,
-                                    complexityLevel = item.complexityLevel,
-                                    recommendedHours = item.recommendedHours,
-                                    priority = item.priority,
-                                    requiresPractice = item.requiresPractice,
-                                    requiresSpacedReview = item.requiresSpacedReview,
-                                    rationale = item.rationale
-                                )
-                            },
-                            infoMessage = "Análisis IA generado. Revisa y edita antes de regenerar el plan."
-                        )
-                    }
-                } else {
-                    _uiState.update { it.copy(isAnalyzing = false, error = "No se pudo recuperar el análisis generado") }
+                onSelectAssessment(assessment.id)
+                _uiState.update {
+                    it.copy(
+                        isAnalyzing = false,
+                        infoMessage = "Análisis IA generado. Revisa y edita antes de regenerar el plan."
+                    )
                 }
             } else {
                 _uiState.update { it.copy(isAnalyzing = false, error = result.exceptionOrNull()?.message) }
@@ -238,22 +195,13 @@ class AiAnalysisViewModel @Inject constructor(
     }
 
     fun onSaveEdits() {
-        val analysisId = _uiState.value.analysisId ?: return
+        val request = currentApplyRequest() ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingEdits = true, error = null, infoMessage = null) }
-            val result = saveAiAnalysisEditsUseCase(
-                analysisId = analysisId,
-                estimatedScope = _uiState.value.estimatedScope,
-                justification = _uiState.value.justification,
-                topicComplexities = _uiState.value.topicEdits.map { it.toDomain(analysisId) }
-            )
+            val result = aiWorkflowCoordinator.saveAnalysisEdits(request)
             if (result.isSuccess) {
                 _uiState.update {
-                    it.copy(
-                        isSavingEdits = false,
-                        requiresConfirmation = false,
-                        infoMessage = "Cambios guardados"
-                    )
+                    it.copy(isSavingEdits = false, requiresConfirmation = false, infoMessage = "Cambios guardados")
                 }
             } else {
                 _uiState.update { it.copy(isSavingEdits = false, error = result.exceptionOrNull()?.message) }
@@ -262,53 +210,19 @@ class AiAnalysisViewModel @Inject constructor(
     }
 
     fun onApplyAndRegenerate() {
-        val assessment = _uiState.value.selectedAssessment ?: return
-        val analysisId = _uiState.value.analysisId ?: return
+        val request = currentApplyRequest() ?: return
 
         if (_uiState.value.requiresConfirmation && _uiState.value.confidence < 0.75f) {
             _uiState.update {
-                it.copy(
-                    error = "La confianza del análisis es baja. Revisa alcance/temas y guarda edición antes de aplicar."
-                )
+                it.copy(error = "La confianza del análisis es baja. Revisa alcance/temas y guarda edición antes de aplicar.")
             }
             return
         }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isApplyingAndRegenerating = true, error = null, infoMessage = null) }
-
-            val saveResult = saveAiAnalysisEditsUseCase(
-                analysisId = analysisId,
-                estimatedScope = _uiState.value.estimatedScope,
-                justification = _uiState.value.justification,
-                topicComplexities = _uiState.value.topicEdits.map { it.toDomain(analysisId) }
-            )
-            if (saveResult.isFailure) {
-                _uiState.update {
-                    it.copy(
-                        isApplyingAndRegenerating = false,
-                        error = saveResult.exceptionOrNull()?.message
-                    )
-                }
-                return@launch
-            }
-
-            val applyResult = applyAiComplexityToTopicsUseCase(
-                originalTopics = latestTopicsForAssessment,
-                editedComplexities = _uiState.value.topicEdits.map { it.toDomain(analysisId) }
-            )
-            if (applyResult.isFailure) {
-                _uiState.update {
-                    it.copy(
-                        isApplyingAndRegenerating = false,
-                        error = applyResult.exceptionOrNull()?.message
-                    )
-                }
-                return@launch
-            }
-
-            val regenerateResult = generateAssessmentPlanUseCase(assessment.id)
-            if (regenerateResult.isSuccess) {
+            val result = aiWorkflowCoordinator.applyEditsAndRegenerate(request)
+            if (result.isSuccess) {
                 _uiState.update {
                     it.copy(
                         isApplyingAndRegenerating = false,
@@ -318,13 +232,22 @@ class AiAnalysisViewModel @Inject constructor(
                 }
             } else {
                 _uiState.update {
-                    it.copy(
-                        isApplyingAndRegenerating = false,
-                        error = regenerateResult.exceptionOrNull()?.message
-                    )
+                    it.copy(isApplyingAndRegenerating = false, error = result.exceptionOrNull()?.message)
                 }
             }
         }
+    }
+
+    private fun currentApplyRequest(): ApplyAnalysisEditsRequest? {
+        val assessment = _uiState.value.selectedAssessment ?: return null
+        val analysisId = _uiState.value.analysisId ?: return null
+        return ApplyAnalysisEditsRequest(
+            assessmentId = assessment.id,
+            analysisId = analysisId,
+            estimatedScope = _uiState.value.estimatedScope,
+            justification = _uiState.value.justification,
+            topicComplexities = _uiState.value.topicEdits.map { it.toDomain(analysisId) }
+        )
     }
 
     private fun EditableTopicComplexity.toDomain(analysisId: Long): TopicComplexityAnalysis =

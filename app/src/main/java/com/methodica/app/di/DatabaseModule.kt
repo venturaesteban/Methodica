@@ -8,6 +8,10 @@ import com.methodica.app.data.local.dao.AssessmentDao
 import com.methodica.app.data.local.dao.AssessmentTopicDao
 import com.methodica.app.data.local.dao.AcademicYearDao
 import com.methodica.app.data.local.dao.AiAnalysisDao
+import com.methodica.app.data.local.dao.LocalAiModelStateDao
+import com.methodica.app.data.local.dao.AiIndexingRunDao
+import com.methodica.app.data.local.dao.AiDocumentChunkDao
+import com.methodica.app.data.local.dao.AiChunkEmbeddingDao
 import com.methodica.app.data.local.dao.AiDocumentDao
 import com.methodica.app.data.local.dao.DegreeDao
 import com.methodica.app.data.local.dao.ExamScopeAnalysisDao
@@ -76,4 +80,17 @@ object DatabaseModule {
     @Provides
     fun provideTopicComplexityAnalysisDao(database: AppDatabase): TopicComplexityAnalysisDao =
         database.topicComplexityAnalysisDao()
+
+    @Provides
+    fun provideAiDocumentChunkDao(database: AppDatabase): AiDocumentChunkDao = database.aiDocumentChunkDao()
+
+    @Provides
+    fun provideAiChunkEmbeddingDao(database: AppDatabase): AiChunkEmbeddingDao = database.aiChunkEmbeddingDao()
+
+    @Provides
+    fun provideAiIndexingRunDao(database: AppDatabase): AiIndexingRunDao = database.aiIndexingRunDao()
+
+    @Provides
+    fun provideLocalAiModelStateDao(database: AppDatabase): LocalAiModelStateDao = database.localAiModelStateDao()
+
 }

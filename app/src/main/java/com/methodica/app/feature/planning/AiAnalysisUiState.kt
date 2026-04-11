@@ -27,6 +27,8 @@ data class AiAnalysisUiState(
     val sourceText: String = "",
     val aiExecutionMode: AiExecutionMode = AiExecutionMode.HEURISTIC,
     val canUseExternalAi: Boolean = false,
+    val localModelsReady: Boolean = false,
+    val runtimeMessage: String? = null,
     val analysisId: Long? = null,
     val estimatedScope: String = "",
     val justification: String = "",
