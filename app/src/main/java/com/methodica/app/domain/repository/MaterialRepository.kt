@@ -9,4 +9,5 @@ interface MaterialRepository {
     suspend fun saveMaterial(material: Material): Long
     suspend fun deleteMaterial(material: Material)
     suspend fun buildAiResourceSummary(material: Material, maxChars: Int = 2500): String?
+    suspend fun buildAiIndexableContent(material: Material, maxChars: Int = 24000): String?
 }

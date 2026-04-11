@@ -2,7 +2,8 @@ package com.methodica.app.di
 
 import com.methodica.app.data.ai.workflow.DefaultAiWorkflowCoordinator
 import com.methodica.app.data.localai.provider.DeferredActionProvider
-import com.methodica.app.data.localai.provider.DeferredEmbeddingProvider
+import com.methodica.app.data.localai.pipeline.DefaultLocalAiIngestionPipeline
+import com.methodica.app.data.localai.provider.OnDeviceEmbeddingProvider
 import com.methodica.app.data.localai.provider.DeferredReasoningProvider
 import com.methodica.app.data.localai.provider.ParagraphChunkingStrategy
 import com.methodica.app.data.localai.provider.RoomBackedRetrievalIndex
@@ -10,6 +11,7 @@ import com.methodica.app.data.localai.runtime.RoomBackedLocalModelRuntimeManager
 import com.methodica.app.domain.ai.local.ActionProvider
 import com.methodica.app.domain.ai.local.ChunkingStrategy
 import com.methodica.app.domain.ai.local.EmbeddingProvider
+import com.methodica.app.domain.ai.local.LocalAiIngestionPipeline
 import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
 import com.methodica.app.domain.ai.local.ReasoningProvider
 import com.methodica.app.domain.ai.local.RetrievalIndex
@@ -30,7 +32,7 @@ object LocalAiModule {
 
     @Provides
     @Singleton
-    fun provideEmbeddingProvider(impl: DeferredEmbeddingProvider): EmbeddingProvider = impl
+    fun provideEmbeddingProvider(impl: OnDeviceEmbeddingProvider): EmbeddingProvider = impl
 
     @Provides
     @Singleton
@@ -48,6 +50,10 @@ object LocalAiModule {
     @Singleton
     fun provideChunkingStrategy(impl: ParagraphChunkingStrategy): ChunkingStrategy = impl
 
+
+    @Provides
+    @Singleton
+    fun provideLocalAiIngestionPipeline(impl: DefaultLocalAiIngestionPipeline): LocalAiIngestionPipeline = impl
     @Provides
     @Singleton
     fun provideAiWorkflowCoordinator(impl: DefaultAiWorkflowCoordinator): AiWorkflowCoordinator = impl

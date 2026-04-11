@@ -4,6 +4,7 @@ import com.methodica.app.domain.planning.StudyPlanGenerator
 import com.methodica.app.domain.ai.ComplexityEstimator
 import com.methodica.app.domain.ai.DocumentParser
 import com.methodica.app.domain.ai.ExamScopeInferenceService
+import com.methodica.app.domain.ai.local.LocalAiIngestionPipeline
 import com.methodica.app.domain.ai.LlmProvider
 import com.methodica.app.domain.ai.StudyPlanningAdvisor
 import com.methodica.app.domain.ai.SyllabusAnalyzer
@@ -207,13 +208,13 @@ object UseCaseModule {
 
     @Provides
     @Singleton
-    fun provideUpsertMaterialUseCase(repository: MaterialRepository) =
-        UpsertMaterialUseCase(repository)
+    fun provideUpsertMaterialUseCase(repository: MaterialRepository, localAiIngestionPipeline: LocalAiIngestionPipeline) =
+        UpsertMaterialUseCase(repository, localAiIngestionPipeline)
 
     @Provides
     @Singleton
-    fun provideDeleteMaterialUseCase(repository: MaterialRepository) =
-        DeleteMaterialUseCase(repository)
+    fun provideDeleteMaterialUseCase(repository: MaterialRepository, localAiIngestionPipeline: LocalAiIngestionPipeline) =
+        DeleteMaterialUseCase(repository, localAiIngestionPipeline)
 
     @Provides
     @Singleton

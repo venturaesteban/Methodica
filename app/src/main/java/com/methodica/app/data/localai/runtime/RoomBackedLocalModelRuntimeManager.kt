@@ -3,6 +3,7 @@ package com.methodica.app.data.localai.runtime
 import android.app.ActivityManager
 import android.content.Context
 import android.os.StatFs
+import com.methodica.app.data.local.dao.AiIndexingRunDao
 import com.methodica.app.data.local.dao.LocalAiModelStateDao
 import com.methodica.app.data.local.entity.LocalAiModelStateEntity
 import com.methodica.app.domain.ai.local.DeviceCompatibilityReport
@@ -20,11 +21,12 @@ import kotlinx.coroutines.flow.map
 @Singleton
 class RoomBackedLocalModelRuntimeManager @Inject constructor(
     private val modelStateDao: LocalAiModelStateDao,
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val aiIndexingRunDao: AiIndexingRunDao
 ) : LocalModelRuntimeManager {
 
     override fun observeRuntimeState(): Flow<LocalModelRuntimeState> =
-        modelStateDao.observeAll().map { records ->
+        kotlinx.coroutines.flow.combine(modelStateDao.observeAll(), aiIndexingRunDao.observeRunningCount()) { records, runningCount ->
             val installed = records
                 .filter { it.status == STATUS_READY }
                 .mapNotNull { runCatching { LocalAiModelType.valueOf(it.modelType) }.getOrNull() }
@@ -37,7 +39,7 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
                     installed.isNotEmpty() -> RuntimeAvailability.READY
                     else -> RuntimeAvailability.UNINITIALIZED
                 },
-                isIndexing = false,
+                isIndexing = runningCount > 0,
                 installedModels = installed,
                 lastError = anyError?.lastError
             )

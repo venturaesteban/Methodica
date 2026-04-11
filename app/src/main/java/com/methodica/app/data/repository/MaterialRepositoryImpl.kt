@@ -63,6 +63,14 @@ class MaterialRepositoryImpl(
         return summary
     }
 
+
+    override suspend fun buildAiIndexableContent(material: Material, maxChars: Int): String? {
+        return when (material.type) {
+            MaterialType.FILE_URI -> extractLocalFileText(material, maxChars)
+            MaterialType.WEB_LINK -> summarizeWebLink(material)
+            MaterialType.VIDEO_LINK -> summarizeVideoLink(material)
+        }
+    }
     private fun summarizeLocalFile(material: Material, maxChars: Int): String? {
         val uri = runCatching { Uri.parse(material.uri) }.getOrNull() ?: return null
         val resolver = context.contentResolver
@@ -108,6 +116,22 @@ class MaterialRepositoryImpl(
             if (mime.isNotBlank()) append(", mime=$mime")
             if (sizeBytes != null && sizeBytes > 0) append(", tamano=${sizeBytes / 1024}KB")
         }
+    }
+
+
+    private fun extractLocalFileText(material: Material, maxChars: Int): String? {
+        val uri = runCatching { Uri.parse(material.uri) }.getOrNull() ?: return null
+        val resolver = context.contentResolver
+        val mime = resolver.getType(uri).orEmpty()
+        val (displayName, _) = queryOpenableMetadata(uri)
+        val extension = displayName.substringAfterLast('.', "").lowercase()
+        if (mime.contains("pdf", ignoreCase = true) || extension == "pdf") {
+            return extractPdfTextSnippet(uri, maxChars = maxChars)
+                ?: extractPdfTextWithOcr(uri, maxChars = maxChars)
+        }
+        val isTextLike = mime.startsWith("text/") || extension in TEXT_EXTENSIONS
+        if (isTextLike) return readTextFromUri(uri, maxChars)
+        return null
     }
 
     private fun summarizeWebLink(material: Material): String {
