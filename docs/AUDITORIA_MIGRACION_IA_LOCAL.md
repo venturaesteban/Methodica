@@ -294,3 +294,18 @@ Orden recomendado de implementación:
 5. **Consolidación de UX/arquitectura (coordinador único + eliminación de duplicidades)**.
 
 Este orden maximiza impacto de producto con riesgo controlado y evita migración big-bang.
+
+---
+
+## 11) Implementación realizada en esta fase (preparación real en código)
+
+Se implementó la base técnica en código para la migración local progresiva. El detalle aterrizado de arquitectura, contratos, Room y plan de fase 3 está documentado en:
+
+- `docs/REDISENO_IA_LOCAL_PREPARACION_FASE2.md`
+
+Cambios clave ya introducidos:
+- Contratos locales (`LocalModelRuntimeManager`, `EmbeddingProvider`, `ReasoningProvider`, `ActionProvider`, `RetrievalIndex`, `ChunkingStrategy`) y coordinador único (`AiWorkflowCoordinator`).
+- Nuevas tablas Room para chunks/embeddings/index runs/model state con migración `8 -> 9`.
+- Implementación inicial de runtime manager local con chequeo de compatibilidad por RAM/espacio y persistencia de estado.
+- Refactor incremental de `PlanningViewModel` y `AiAnalysisViewModel` para usar coordinador único y eliminar duplicación de flujo IA.
+- Componentes remotos legacy marcados como deprecados, manteniendo compatibilidad temporal sin big-bang.
