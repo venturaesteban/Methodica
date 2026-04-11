@@ -1,35 +1,99 @@
-# Fase 3 real: pipeline IA local (ingestión + chunking + embeddings + retrieval)
+# Fase 3.1 correctiva: embeddings semánticos locales reales (Android)
 
-## Qué se implementó
+## Resultado
 
-- `OnDeviceEmbeddingProvider`: embedding local determinista (hashing vectorial, 256 dimensiones), sin red.
-- `RoomBackedRetrievalIndex`: persistencia real de chunks/embeddings y búsqueda top-k con cosine similarity.
-- Filtros académicos reales en retrieval: `subjectId`, `assessmentId`, `topicId`, `materialId`, `documentId`.
-- `DefaultLocalAiIngestionPipeline`: indexación incremental por `contentHash`, tracking de runs y estado parcial/error.
-- Integración con materiales reales:
-  - `MaterialRepository.buildAiIndexableContent(...)` para extraer texto utilizable,
-  - `UpsertMaterialUseCase` dispara reindexado al guardar,
-  - `DeleteMaterialUseCase` limpia índice al borrar.
-- Chunking mejorado (`ParagraphChunkingStrategy`) con metadatos y control de tamaño.
-- `DefaultAiWorkflowCoordinator` ahora recupera contexto local y lo inyecta en el prompt de análisis.
+Se sustituyó el proveedor de hashing por un proveedor semántico real local en Android usando **MediaPipe Tasks Text Embedder** (inferencia offline) y una integración operativa de modelo para `EMBEDDING_GEMMA`. El pipeline de chunking, persistencia Room, indexación incremental, filtros académicos y tracking de runs se mantiene.
 
-## Decisiones clave
+## Proveedor definitivo
 
-1. **Embedding local sin dependencias remotas**
-   - Se utiliza un encoder local basado en hashing para garantizar ejecución offline y latencia baja.
-   - Está preparado como capa de transición compatible para reemplazo futuro por runtime nativo de EmbeddingGemma.
+- **Proveedor activo**: `MediaPipeTextEmbeddingProvider`.
+- **Runtime**: `com.google.mediapipe:tasks-text`.
+- **Inferencia**: totalmente local, sin red durante embedding/query.
+- **Estado por defecto**: ya no existe hashing como camino principal.
 
-2. **Indexación incremental real**
-   - Se comparan chunks nuevos vs existentes por `externalId + contentHash`.
-   - Solo se recalculan embeddings de chunks nuevos/cambiados.
-   - Se eliminan chunks huérfanos del índice cuando el material cambia.
+## Gestión operativa del modelo (implementada)
 
-3. **Observabilidad mínima útil**
-   - Runs persistidos en `ai_indexing_runs` con estados: `RUNNING`, `SUCCESS`, `PARTIAL`, `FAILED`.
-   - Runtime local refleja `isIndexing` en base a runs en progreso.
+### Estrategia elegida
+
+1. **Ruta local canónica** (persistente en app private storage):
+   - `files/local_models/embeddinggemma/embeddinggemma-300m.task`
+2. **Inicialización en primer uso**:
+   - `ensureModelReady(spec)` valida compatibilidad (ABI 64-bit, RAM, espacio) y estado.
+3. **Obtención del modelo**:
+   - Intento 1: copiar desde `assets/models/embeddinggemma/embeddinggemma-300m.task`.
+   - Intento 2: descarga HTTP si `downloadUrl` está configurada en el `spec`.
+   - Si no hay asset ni URL, se marca estado `MISSING_MODEL` y falla explícitamente.
+4. **Integridad**:
+   - Si `expectedSha256` está definido, se valida SHA-256 antes de marcar `READY`.
+5. **Versionado**:
+   - `modelVersion = embeddinggemma-300m-task-v1` (provider).
+   - Se persiste en `ai_chunk_embeddings.modelVersion`.
+6. **No mezcla de índices incompatibles**:
+   - Retrieval SQL filtra por `modelVersion` del proveedor activo.
+   - La indexación incremental fuerza re-embedding cuando detecta versiones antiguas en chunks existentes.
+
+### Estados expuestos a UI/capabilities
+
+Se persisten y propagan al runtime:
+- `MISSING_MODEL`
+- `DOWNLOADING`
+- `INITIALIZING`
+- `READY`
+- `INCOMPATIBLE_DEVICE`
+- `NO_SPACE`
+- `INTEGRITY_ERROR`
+- `ERROR`
+
+## Bloqueo real sobre EmbeddingGemma y cómo queda resuelto
+
+### Bloqueo técnico real
+
+En el estado actual del repo, **no se incluye** el artefacto `.task` de EmbeddingGemma (pesado y normalmente distribuido fuera del repo). Sin ese archivo no puede crearse `TextEmbedder`.
+
+Tipo de bloqueo: **provisión/artefacto de modelo** (no de arquitectura del pipeline).
+
+### Integración máxima viable implementada
+
+- Runtime y provider reales listos para EmbeddingGemma.
+- Flujo operativo listo para:
+  - asset empaquetado, o
+  - descarga bajo configuración.
+- Si el artefacto no está, se informa estado explícito (`MISSING_MODEL`) en lugar de fallback falso.
+
+## Pasos manuales mínimos inevitables (claros)
+
+> Necesarios solo si no se configura descarga automática y no se empaqueta en assets.
+
+1. Obtener un **modelo Text Embedder compatible con MediaPipe** para EmbeddingGemma en formato `.task`.
+2. Colocarlo en:
+   - `app/src/main/assets/models/embeddinggemma/embeddinggemma-300m.task` (para empaquetado),
+   - o proveerlo a `files/local_models/embeddinggemma/embeddinggemma-300m.task` en dispositivo.
+3. (Recomendado) Fijar SHA-256 en `MediaPipeTextEmbeddingProvider.EMBEDDING_SPEC.expectedSha256`.
+4. Verificar instalación:
+   - runtime pasa a `READY`,
+   - no aparece `MISSING_MODEL` ni `INTEGRITY_ERROR`,
+   - indexing/retrieval generan resultados.
+
+## Qué queda automatizado por código
+
+- Evaluación de compatibilidad del dispositivo.
+- Copia desde assets si existe modelo empaquetado.
+- Descarga HTTP si hay URL configurada.
+- Verificación de integridad SHA-256 (si se configura hash esperado).
+- Inicialización del runtime de embeddings.
+- Persistencia de estado del modelo para UI.
+- Reindexado incremental con invalidación automática por cambio de `modelVersion`.
+- Retrieval filtrado por versión del embedding para evitar contaminación con vectores legacy.
+
+## Validación y tests
+
+Se actualizaron pruebas de pipeline para cubrir:
+- retrieval con filtros académicos,
+- indexación incremental sin recalcular cuando no cambia contenido,
+- reindexación al cambiar versión de embeddings.
 
 ## Riesgos abiertos
 
-- El embedding de hashing es robusto para recuperación semántica ligera, pero no iguala calidad de EmbeddingGemma real.
-- El rendimiento de retrieval puede requerir optimización adicional para corpus muy grandes (actualmente ranking en memoria tras filtro SQL).
-- Faltan pruebas instrumentadas Room end-to-end con base real en Android (se añadieron unit tests con dobles de test).
+- Si el artefacto EmbeddingGemma no se provee, el estado quedará en `MISSING_MODEL` (esperado).
+- La descarga automática requiere URL estable y distribución permitida del modelo.
+- Ajustes de RAM/espacio (`requiredRamMb`, `requiredDiskBytes`) pueden necesitar tuning por dispositivo real.

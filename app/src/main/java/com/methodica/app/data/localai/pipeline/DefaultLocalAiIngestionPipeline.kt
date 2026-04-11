@@ -1,5 +1,6 @@
 package com.methodica.app.data.localai.pipeline
 
+import com.methodica.app.data.local.dao.AiChunkEmbeddingDao
 import com.methodica.app.data.local.dao.AiDocumentChunkDao
 import com.methodica.app.data.local.dao.AiIndexingRunDao
 import com.methodica.app.data.local.entity.AiIndexingRunEntity
@@ -22,6 +23,7 @@ class DefaultLocalAiIngestionPipeline @Inject constructor(
     private val embeddingProvider: EmbeddingProvider,
     private val retrievalIndex: RetrievalIndex,
     private val chunkDao: AiDocumentChunkDao,
+    private val embeddingDao: AiChunkEmbeddingDao,
     private val indexingRunDao: AiIndexingRunDao
 ) : LocalAiIngestionPipeline {
 
@@ -79,9 +81,14 @@ class DefaultLocalAiIngestionPipeline @Inject constructor(
                 documentId = source.documentId
             )
             val existingByExternal = existing.associateBy { it.externalId }
+            val incompatibleVersion = if (existing.isEmpty()) false else {
+                embeddingDao.getModelVersionsForChunkIds(existing.map { it.id })
+                    .any { it != embeddingProvider.modelVersion }
+            }
+
             val changedOrNew = freshChunks.filter { chunk ->
                 val previous = existingByExternal[chunk.externalId]
-                previous == null || previous.contentHash != chunk.contentHash
+                incompatibleVersion || previous == null || previous.contentHash != chunk.contentHash
             }
             val removedIds = existing
                 .filter { old -> freshChunks.none { it.externalId == old.externalId } }

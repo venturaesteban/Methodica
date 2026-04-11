@@ -40,6 +40,7 @@ interface AiChunkEmbeddingDao {
           FROM ai_chunk_embeddings e
           INNER JOIN ai_document_chunks c ON c.id = e.chunkId
          WHERE c.subjectId = :subjectId
+           AND e.modelVersion = :modelVersion
            AND (:assessmentId IS NULL OR c.assessmentId = :assessmentId)
            AND (:topicId IS NULL OR c.topicId = :topicId)
            AND (:materialId IS NULL OR c.materialId = :materialId)
@@ -51,6 +52,10 @@ interface AiChunkEmbeddingDao {
         assessmentId: Long?,
         topicId: Long?,
         materialId: Long?,
-        documentId: Long?
+        documentId: Long?,
+        modelVersion: String
     ): List<EmbeddingChunkRow>
+
+    @Query("SELECT DISTINCT modelVersion FROM ai_chunk_embeddings WHERE chunkId IN (:chunkIds)")
+    suspend fun getModelVersionsForChunkIds(chunkIds: List<Long>): List<String>
 }

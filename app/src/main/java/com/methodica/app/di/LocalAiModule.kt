@@ -3,7 +3,7 @@ package com.methodica.app.di
 import com.methodica.app.data.ai.workflow.DefaultAiWorkflowCoordinator
 import com.methodica.app.data.localai.provider.DeferredActionProvider
 import com.methodica.app.data.localai.pipeline.DefaultLocalAiIngestionPipeline
-import com.methodica.app.data.localai.provider.OnDeviceEmbeddingProvider
+import com.methodica.app.data.localai.provider.MediaPipeTextEmbeddingProvider
 import com.methodica.app.data.localai.provider.DeferredReasoningProvider
 import com.methodica.app.data.localai.provider.ParagraphChunkingStrategy
 import com.methodica.app.data.localai.provider.RoomBackedRetrievalIndex
@@ -32,7 +32,7 @@ object LocalAiModule {
 
     @Provides
     @Singleton
-    fun provideEmbeddingProvider(impl: OnDeviceEmbeddingProvider): EmbeddingProvider = impl
+    fun provideEmbeddingProvider(impl: MediaPipeTextEmbeddingProvider): EmbeddingProvider = impl
 
     @Provides
     @Singleton
