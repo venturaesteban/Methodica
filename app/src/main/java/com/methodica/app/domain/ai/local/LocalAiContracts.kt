@@ -46,6 +46,7 @@ interface LocalModelRuntimeManager {
     fun observeRuntimeState(): Flow<LocalModelRuntimeState>
     suspend fun evaluateDeviceCompatibility(spec: LocalAiModelSpec): DeviceCompatibilityReport
     suspend fun ensureModelReady(spec: LocalAiModelSpec): Result<Unit>
+    suspend fun markModelError(type: LocalAiModelType, message: String)
     suspend fun releaseModels()
 }
 
