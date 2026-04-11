@@ -57,13 +57,28 @@ data class TextChunk(
     val source: ChunkSourceRef,
     val sequence: Int,
     val content: String,
-    val tokenEstimate: Int
+    val tokenEstimate: Int,
+    val sourceLabel: String,
+    val resourceType: String,
+    val section: String?,
+    val contentHash: String,
+    val updatedAt: Long
 )
 
 data class ChunkEmbedding(
     val chunkExternalId: String,
     val dimensions: Int,
     val values: FloatArray
+)
+
+data class RetrievalQuery(
+    val query: String,
+    val subjectId: Long,
+    val assessmentId: Long? = null,
+    val topicId: Long? = null,
+    val materialId: Long? = null,
+    val documentId: Long? = null,
+    val limit: Int = 5
 )
 
 data class RetrievalHit(
@@ -77,7 +92,9 @@ interface ChunkingStrategy {
     fun chunkDocument(
         source: ChunkSourceRef,
         sourceLabel: String,
-        rawText: String
+        rawText: String,
+        resourceType: String,
+        updatedAt: Long = System.currentTimeMillis()
     ): List<TextChunk>
 }
 
@@ -87,12 +104,7 @@ interface EmbeddingProvider {
 
 interface RetrievalIndex {
     suspend fun upsert(chunks: List<TextChunk>, embeddings: List<ChunkEmbedding>): Result<Unit>
-    suspend fun query(
-        query: String,
-        subjectId: Long,
-        assessmentId: Long?,
-        limit: Int
-    ): Result<List<RetrievalHit>>
+    suspend fun query(request: RetrievalQuery): Result<List<RetrievalHit>>
     suspend fun markSourceDirty(source: ChunkSourceRef): Result<Unit>
 }
 
