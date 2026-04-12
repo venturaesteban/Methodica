@@ -119,6 +119,7 @@ dependencies {
     implementation(libs.mlkit.text.recognition)
     implementation(libs.google.play.services.tasks)
     implementation(libs.mediapipe.tasks.text)
+    implementation(libs.mediapipe.tasks.genai)
 
     // Hilt DI
     implementation(libs.hilt.android)

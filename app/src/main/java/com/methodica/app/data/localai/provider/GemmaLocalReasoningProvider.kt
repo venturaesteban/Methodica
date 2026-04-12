@@ -1,6 +1,7 @@
 package com.methodica.app.data.localai.provider
 
 import android.content.Context
+import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.methodica.app.domain.ai.local.LocalAiModelSpec
 import com.methodica.app.domain.ai.local.LocalAiModelType
 import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
@@ -22,41 +23,55 @@ class GemmaLocalReasoningProvider @Inject constructor(
     private val outputParser: GemmaReasoningOutputParser
 ) : ReasoningProvider {
 
-    override suspend fun reason(request: ReasoningRequest): Result<ReasoningPlanOutput> = runCatching {
-        runtimeManager.ensureModelReady(GEMMA_3N_SPEC).getOrThrow()
-        val modelPath = context.filesDir.resolve(GEMMA_3N_SPEC.localRelativePath).absolutePath
-        val prompt = buildPrompt(request)
-        val firstRaw = invokeLocalGemma(prompt = prompt, modelPath = modelPath)
-        outputParser.parse(firstRaw).getOrElse {
-            val repairPrompt = buildRepairPrompt(originalPrompt = prompt, invalidOutput = firstRaw, error = it.message)
-            val repairedRaw = invokeLocalGemma(prompt = repairPrompt, modelPath = modelPath)
-            outputParser.parse(repairedRaw).getOrThrow()
+    override suspend fun reason(request: ReasoningRequest): Result<ReasoningPlanOutput> =
+        runCatching {
+            runtimeManager.ensureModelReady(GEMMA_3N_SPEC).getOrElse {
+                throw ReasoningRuntimeException.ModelNotFound(it.message ?: "Modelo Gemma 3n no disponible")
+            }
+            val modelPath = context.filesDir.resolve(GEMMA_3N_SPEC.localRelativePath).absolutePath
+            val prompt = buildPrompt(request)
+            val firstRaw = invokeLocalGemma(prompt = prompt, modelPath = modelPath)
+            outputParser.parse(firstRaw).getOrElse {
+                val repairPrompt = buildRepairPrompt(originalPrompt = prompt, invalidOutput = firstRaw, error = it.message)
+                val repairedRaw = invokeLocalGemma(prompt = repairPrompt, modelPath = modelPath)
+                outputParser.parse(repairedRaw).getOrThrow()
+            }
+        }.onFailure { failure ->
+            val typed = failure.toReasoningRuntimeException()
+            runtimeManager.markModelError(LocalAiModelType.GEMMA_3N_REASONING, typed.message ?: "Fallo runtime Gemma 3n")
         }
-    }
 
     private suspend fun invokeLocalGemma(prompt: String, modelPath: String): String = withContext(Dispatchers.Default) {
-        val llmClass = Class.forName("com.google.mediapipe.tasks.genai.llminference.LlmInference")
-        val optionsClass = Class.forName("com.google.mediapipe.tasks.genai.llminference.LlmInference\$LlmInferenceOptions")
+        try {
+            val options = LlmInference.LlmInferenceOptions.builder()
+                .setModelPath(modelPath)
+                .setMaxTokens(1024)
+                .setTopK(32)
+                .setTemperature(0.2f)
+                .build()
 
-        val optionsBuilder = optionsClass.getMethod("builder").invoke(null)
-        optionsBuilder.javaClass.getMethod("setModelPath", String::class.java).invoke(optionsBuilder, modelPath)
-        runCatching { optionsBuilder.javaClass.getMethod("setMaxTokens", Int::class.javaPrimitiveType).invoke(optionsBuilder, 1024) }
-        runCatching { optionsBuilder.javaClass.getMethod("setTopK", Int::class.javaPrimitiveType).invoke(optionsBuilder, 32) }
-        runCatching { optionsBuilder.javaClass.getMethod("setTemperature", Float::class.javaPrimitiveType).invoke(optionsBuilder, 0.2f) }
-
-        val options = optionsBuilder.javaClass.getMethod("build").invoke(optionsBuilder)
-        val create = llmClass.methods.firstOrNull { method ->
-            method.name == "createFromOptions" && method.parameterTypes.size == 2
-        } ?: error("No se encontró createFromOptions para LlmInference")
-
-        val engine = create.invoke(null, context, options)
-        val generate = llmClass.methods.firstOrNull { method ->
-            method.name == "generateResponse" && method.parameterTypes.size == 1
-        } ?: error("No se encontró generateResponse para LlmInference")
-
-        val generated = generate.invoke(engine, prompt) as? String
-        generated?.takeIf { it.isNotBlank() }
-            ?: error("Gemma 3n no devolvió contenido utilizable")
+            LlmInference.createFromOptions(context, options).use { engine ->
+                val generated = engine.generateResponse(prompt)
+                generated?.takeIf { it.isNotBlank() }
+                    ?: throw ReasoningRuntimeException.InferenceError("Gemma 3n no devolvió contenido utilizable")
+            }
+        } catch (exception: NoClassDefFoundError) {
+            throw ReasoningRuntimeException.ClassNotFound("Runtime MediaPipe GenAI ausente en tiempo de ejecución", exception)
+        } catch (exception: NoSuchMethodError) {
+            throw ReasoningRuntimeException.MissingMethod("API incompatible de LlmInference: método ausente", exception)
+        } catch (exception: UnsatisfiedLinkError) {
+            throw ReasoningRuntimeException.RuntimeIncompatibility(
+                "No se pudo cargar JNI del runtime GenAI (ABI/dispositivo incompatible)",
+                exception
+            )
+        } catch (exception: IllegalStateException) {
+            throw ReasoningRuntimeException.InitializationFailed(
+                "Fallo al inicializar LlmInference. Revisa modelo .task compatible con tasks-genai.",
+                exception
+            )
+        } catch (exception: RuntimeException) {
+            throw ReasoningRuntimeException.InferenceError("Error de inferencia Gemma local: ${exception.message}", exception)
+        }
     }
 
     private fun buildPrompt(request: ReasoningRequest): String {
@@ -122,7 +137,6 @@ class GemmaLocalReasoningProvider @Inject constructor(
         """.trimIndent()
     }
 
-
     private fun buildRepairPrompt(originalPrompt: String, invalidOutput: String, error: String?): String = """
         La salida anterior no cumple el JSON requerido.
         Error de validación: ${error ?: "desconocido"}
@@ -134,6 +148,7 @@ class GemmaLocalReasoningProvider @Inject constructor(
         Salida inválida previa:
         $invalidOutput
     """.trimIndent()
+
     companion object {
         val GEMMA_3N_SPEC = LocalAiModelSpec(
             id = "gemma-3n-e2b-it-int4",
@@ -147,4 +162,21 @@ class GemmaLocalReasoningProvider @Inject constructor(
             downloadUrl = null
         )
     }
+}
+
+private sealed class ReasoningRuntimeException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause) {
+    class ClassNotFound(message: String, cause: Throwable? = null) : ReasoningRuntimeException(message, cause)
+    class MissingMethod(message: String, cause: Throwable? = null) : ReasoningRuntimeException(message, cause)
+    class InitializationFailed(message: String, cause: Throwable? = null) : ReasoningRuntimeException(message, cause)
+    class ModelNotFound(message: String, cause: Throwable? = null) : ReasoningRuntimeException(message, cause)
+    class InferenceError(message: String, cause: Throwable? = null) : ReasoningRuntimeException(message, cause)
+    class RuntimeIncompatibility(message: String, cause: Throwable? = null) : ReasoningRuntimeException(message, cause)
+}
+
+private fun Throwable.toReasoningRuntimeException(): ReasoningRuntimeException = when (this) {
+    is ReasoningRuntimeException -> this
+    is NoClassDefFoundError -> ReasoningRuntimeException.ClassNotFound("ClassNotFound en runtime GenAI", this)
+    is NoSuchMethodError -> ReasoningRuntimeException.MissingMethod("Método ausente en runtime GenAI", this)
+    is UnsatisfiedLinkError -> ReasoningRuntimeException.RuntimeIncompatibility("Runtime GenAI no compatible con el dispositivo", this)
+    else -> ReasoningRuntimeException.InferenceError(message ?: "Fallo no clasificado en Gemma local", this)
 }

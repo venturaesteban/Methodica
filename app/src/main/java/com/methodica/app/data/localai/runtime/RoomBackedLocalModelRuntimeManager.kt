@@ -48,7 +48,7 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
             val availability = when {
                 activeStatus == STATUS_DOWNLOADING -> RuntimeAvailability.DOWNLOADING
                 activeStatus == STATUS_INITIALIZING -> RuntimeAvailability.INITIALIZING
-                records.any { it.status == STATUS_ERROR } -> RuntimeAvailability.ERROR
+                records.any { it.status in TERMINAL_ERROR_STATUSES } -> RuntimeAvailability.ERROR
                 installed.isNotEmpty() -> RuntimeAvailability.READY
                 else -> RuntimeAvailability.UNINITIALIZED
             }
@@ -138,6 +138,32 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
         // El provider de embeddings mantiene la instancia del runtime y la libera en GC.
     }
 
+    override suspend fun markModelError(type: LocalAiModelType, message: String) {
+        val now = System.currentTimeMillis()
+        val previous = modelStateDao.getByModelType(type.name)
+        modelStateDao.upsert(
+            if (previous != null) {
+                previous.copy(
+                    status = STATUS_ERROR,
+                    lastError = message,
+                    updatedAt = now
+                )
+            } else {
+                LocalAiModelStateEntity(
+                    modelType = type.name,
+                    modelId = type.name.lowercase(),
+                    modelVersion = "unknown",
+                    status = STATUS_ERROR,
+                    localPath = "",
+                    requiredDiskBytes = 0L,
+                    requiredRamMb = 0,
+                    lastError = message,
+                    updatedAt = now
+                )
+            }
+        )
+    }
+
     private suspend fun installFromAssetsIfPresent(spec: LocalAiModelSpec, destination: File): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             context.assets.open(spec.assetPath).use { input ->
@@ -224,5 +250,12 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
         const val STATUS_INCOMPATIBLE = "INCOMPATIBLE_DEVICE"
         const val STATUS_NO_SPACE = "NO_SPACE"
         const val STATUS_INTEGRITY_ERROR = "INTEGRITY_ERROR"
+        val TERMINAL_ERROR_STATUSES = setOf(
+            STATUS_ERROR,
+            STATUS_MISSING_MODEL,
+            STATUS_INCOMPATIBLE,
+            STATUS_NO_SPACE,
+            STATUS_INTEGRITY_ERROR
+        )
     }
 }
