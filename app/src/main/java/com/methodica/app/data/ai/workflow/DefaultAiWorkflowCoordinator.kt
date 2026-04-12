@@ -3,6 +3,7 @@ package com.methodica.app.data.ai.workflow
 import com.methodica.app.domain.ai.local.ReasoningProvider
 import com.methodica.app.domain.ai.local.ReasoningRequest
 import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
+import com.methodica.app.domain.ai.local.LocalAiModelType
 import com.methodica.app.domain.ai.local.RetrievalIndex
 import com.methodica.app.domain.ai.local.RetrievalQuery
 import com.methodica.app.domain.ai.local.RuntimeAvailability
@@ -53,7 +54,8 @@ class DefaultAiWorkflowCoordinator @Inject constructor(
     ) { settings, runtime ->
         AiWorkflowCapability(
             canUseExternalAi = settings.isEnabledAndConfigured,
-            localModelsReady = runtime.availability == RuntimeAvailability.READY,
+            localModelsReady = runtime.availability == RuntimeAvailability.READY &&
+                runtime.installedModels.contains(LocalAiModelType.GEMMA_3N_REASONING),
             runtimeMessage = when {
                 runtime.isIndexing -> "Indexando materiales locales…"
                 runtime.availability == RuntimeAvailability.INITIALIZING -> "Inicializando Gemma 3n local…"
@@ -88,6 +90,18 @@ class DefaultAiWorkflowCoordinator @Inject constructor(
                 .sortedByDescending { it.score }
                 .distinctBy { it.chunkExternalId }
                 .take(8)
+
+            val runtimeSnapshot = localModelRuntimeManager.observeRuntimeState().first()
+            val canRunGemmaReasoning = runtimeSnapshot.availability == RuntimeAvailability.READY &&
+                runtimeSnapshot.installedModels.contains(LocalAiModelType.GEMMA_3N_REASONING)
+
+            if (!canRunGemmaReasoning) {
+                return@runCatching runHeuristicFallback(
+                    request = request,
+                    evidence = evidence,
+                    reason = runtimeSnapshot.lastError ?: "Gemma local no disponible en este dispositivo"
+                )
+            }
 
             val reasoningResult = reasoningProvider.reason(
                 ReasoningRequest(
@@ -148,25 +162,11 @@ class DefaultAiWorkflowCoordinator @Inject constructor(
                     }
                 )
             } else {
-                val enrichedPrompt = buildString {
-                    append(request.rawText)
-                    append("\n\nFALLBACK_HEURISTICO: runtime local no disponible.\n")
-                    evidence.forEachIndexed { index, hit ->
-                        append("- Evidencia ${index + 1}: ")
-                        append(hit.content.take(280))
-                        append('\n')
-                    }
-                }
-
-                analyzeAssessmentWithAiUseCase(
-                    assessmentId = request.assessmentId,
-                    rawText = enrichedPrompt,
-                    executionMode = request.executionMode,
-                    sourceLabel = "Fallback heurístico por fallo Gemma"
-                ).getOrElse { throw it }
-
-                getLatestAiAnalysisForAssessmentUseCase(request.assessmentId)
-                    ?: error("No se pudo recuperar el análisis de fallback")
+                runHeuristicFallback(
+                    request = request,
+                    evidence = evidence,
+                    reason = reasoningResult.exceptionOrNull()?.message ?: "Error de inferencia local"
+                )
             }
         }
 
@@ -191,5 +191,34 @@ class DefaultAiWorkflowCoordinator @Inject constructor(
         ).getOrElse { throw it }
 
         generateAssessmentPlanUseCase(request.assessmentId).getOrElse { throw it }
+    }
+
+    private suspend fun runHeuristicFallback(
+        request: AnalyzeAssessmentRequest,
+        evidence: List<com.methodica.app.domain.ai.local.RetrievalHit>,
+        reason: String
+    ): StoredAiAnalysis {
+        val enrichedPrompt = buildString {
+            append(request.rawText)
+            append("\n\nFALLBACK_HEURISTICO: runtime local no disponible.\n")
+            append("Motivo: ")
+            append(reason)
+            append('\n')
+            evidence.forEachIndexed { index, hit ->
+                append("- Evidencia ${index + 1}: ")
+                append(hit.content.take(280))
+                append('\n')
+            }
+        }
+
+        analyzeAssessmentWithAiUseCase(
+            assessmentId = request.assessmentId,
+            rawText = enrichedPrompt,
+            executionMode = request.executionMode,
+            sourceLabel = "Fallback heurístico (Gemma local no operativa)"
+        ).getOrElse { throw it }
+
+        return getLatestAiAnalysisForAssessmentUseCase(request.assessmentId)
+            ?: error("No se pudo recuperar el análisis de fallback")
     }
 }

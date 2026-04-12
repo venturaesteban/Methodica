@@ -19,6 +19,7 @@ pdfboxAndroid        = "2.0.27.0"
 mlkitTextRecognition = "16.0.0"
 playServicesTasks    = "18.2.0"
 mediapipeTasksText   = "0.10.14"
+mediapipeTasksGenAi  = "0.10.14"
 
 [libraries]
 # Core
@@ -64,6 +65,7 @@ pdfbox-android                       = { group = "com.tom-roush",              n
 mlkit-text-recognition               = { group = "com.google.mlkit",           name = "text-recognition",            version.ref = "mlkitTextRecognition" }
 google-play-services-tasks           = { group = "com.google.android.gms",     name = "play-services-tasks",         version.ref = "playServicesTasks" }
 mediapipe-tasks-text                 = { group = "com.google.mediapipe",       name = "tasks-text",                  version.ref = "mediapipeTasksText" }
+mediapipe-tasks-genai               = { group = "com.google.mediapipe",       name = "tasks-genai",                 version.ref = "mediapipeTasksGenAi" }
 
 # Testing
 junit                                = { group = "junit",                       name = "junit",                       version.ref = "junit" }

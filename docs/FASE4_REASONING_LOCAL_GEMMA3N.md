@@ -1,41 +1,52 @@
-# Methodica Fase 4 — Reasoning local real con Gemma 3n
+# Methodica Fase 4.1 (correctiva) — Integración real de runtime Gemma 3n
 
-## Objetivo implementado
-En esta fase el camino **nominal** de análisis IA pasa a ser:
+## Estado final inequívoco de esta fase
+**Situación B (explícita):**
+- El proyecto **sí** queda integrado con runtime real de MediaPipe GenAI (`tasks-genai`) a nivel de dependencias y API.
+- Pero en este repositorio **no se incluye** el archivo de modelo Gemma 3n (`.task`) en `assets`, ni URL de descarga configurada.
+- Por tanto, en el estado actual del repo, el camino estable operativo sigue siendo el **fallback heurístico**.
 
-1. Retrieval local persistente (índice local + filtros académicos).
-2. Reasoning local con Gemma 3n (sin endpoints remotos).
-3. Salida estructurada validada.
-4. Persistencia en `AiAnalysisRepository` para alimentar análisis y planificación.
+No se presenta Gemma local como camino principal operativo hasta que el modelo compatible esté realmente instalado en dispositivo.
 
-El camino heurístico queda como **fallback secundario**, activado solo ante fallo real del runtime local de reasoning.
+## Runtime/dependencias verificadas
+- Runtime de embeddings: `com.google.mediapipe:tasks-text`.
+- Runtime de reasoning local: `com.google.mediapipe:tasks-genai`.
+- Integración de reasoning actual: **directa** (sin reflexión) contra:
+  - `com.google.mediapipe.tasks.genai.llminference.LlmInference`
+  - `LlmInference.createFromOptions(context, options)`
+  - `generateResponse(prompt)`
 
-## Runtime/modelo de reasoning usado
-- Modelo esperado: `gemma-3n-e2b-it-int4`.
-- Tipo de runtime: `LocalAiModelType.GEMMA_3N_REASONING`.
-- Ruta local esperada: `local_models/gemma3n/gemma-3n-e2b-it-int4.task`.
-- Integración de inferencia: intento local vía `com.google.mediapipe.tasks.genai.llminference.LlmInference` (reflectivo para no falsear compatibilidad en build).
+## Qué corrige esta fase frente al estado anterior
+1. Se elimina la “integración reflectiva ambigua” para reasoning y se usa API tipada de `tasks-genai`.
+2. Se clasifica y reporta fallo real por categorías de runtime:
+   - runtime ausente en ejecución (`NoClassDefFoundError`),
+   - método ausente/incompatible (`NoSuchMethodError`),
+   - fallo de inicialización (`IllegalStateException`),
+   - incompatibilidad de runtime/JNI (`UnsatisfiedLinkError`),
+   - modelo no disponible,
+   - error de inferencia.
+3. El error se propaga al `LocalModelRuntimeManager` con `markModelError(...)`.
+4. El coordinador **no** marca modelos locales como listos si no está instalado `GEMMA_3N_REASONING`.
+5. Si Gemma no está realmente disponible/ready, el flujo entra directamente en fallback heurístico con motivo explícito.
 
-## Qué está automatizado
-- Verificación de compatibilidad/disco/RAM con `LocalModelRuntimeManager`.
-- Instalación desde assets locales si el archivo está empaquetado.
-- Validación de integridad (SHA256 si se configura).
-- Cambio de estado de runtime (`UNINITIALIZED`, `DOWNLOADING`, `INITIALIZING`, `READY`, `ERROR`).
-- Ejecución de reasoning local sobre evidencia recuperada.
-- Parseo robusto de JSON estructurado con validación y reintento de reparación de salida.
-- Persistencia de resultados estructurados para flujo de producto.
+## Bloqueo técnico real pendiente
+Para que Gemma 3n local pase a estado operativo (Situación A), falta:
+1. Proveer modelo `.task` de Gemma 3n compatible con `tasks-genai` en:
+   - `assets/models/gemma3n/gemma-3n-e2b-it-int4.task`, o
+   - `files/local_models/gemma3n/gemma-3n-e2b-it-int4.task`.
+2. (Recomendado) fijar `expectedSha256` en `LocalAiModelSpec` para integridad fuerte.
+3. Validar en hardware objetivo (RAM/ABI) que el runtime GenAI inicializa correctamente.
 
-## Intervención manual mínima pendiente
-- Colocar el artefacto del modelo Gemma 3n compatible en assets o en la ruta local esperada.
-- Si se requiere hash estricto en producción, definir `expectedSha256` del modelo en el `LocalAiModelSpec`.
-- Validar en dispositivo objetivo que la librería de inferencia local elegida (MediaPipe GenAI) esté disponible en el packaging final.
+## Cuándo entra fallback heurístico
+Fallback entra en cualquiera de estos casos:
+- estado runtime no `READY` para `GEMMA_3N_REASONING`,
+- modelo ausente,
+- incompatibilidad de dispositivo/runtime,
+- fallo de inicialización o inferencia,
+- incompatibilidad de API de runtime.
 
-## Limitaciones reales (Android)
-- En algunos dispositivos, el runtime de Gemma 3n puede no estar disponible por RAM/ABI.
-- La API exacta de inferencia local puede variar según versión del runtime; por eso se implementa invocación reflectiva y fallback controlado.
-- Si el runtime local falla, Methodica degrada a heurístico para no romper pantalla/flujo.
-
-## Diferencia explícita: principal vs fallback
-- **Principal**: `ReasoningProvider` local (Gemma 3n) + retrieval local.
-- **Fallback**: `AnalyzeAssessmentWithAiUseCase` heurístico, solo si falla `ReasoningProvider`.
+## Limitaciones Android reales documentadas
+- Requisitos de RAM/espacio pueden bloquear modelos grandes en gama media/baja.
+- Dependencia JNI/ABI puede fallar por arquitectura o packaging.
+- Sin artefacto de modelo no hay inferencia local real, aunque el runtime esté enlazado en Gradle.
 

@@ -44,8 +44,10 @@ import com.methodica.app.domain.usecase.assessmenttopic.ObserveAssessmentTopicsU
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,10 +82,38 @@ class DefaultAiWorkflowCoordinatorTest {
         assertTrue(result.getOrThrow().analysis.summary.contains("Alcance estimado"))
     }
 
+    @Test
+    fun `capabilities no marca reasoning listo sin modelo gemma instalado`() = runTest {
+        val aiRepo = InMemoryAiRepo()
+        val coordinator = coordinator(
+            aiRepo = aiRepo,
+            retrievalIndex = TrackingRetrievalIndex(),
+            reasoningProvider = SuccessReasoningProvider(),
+            runtimeState = MutableStateFlow(
+                LocalModelRuntimeState(
+                    availability = RuntimeAvailability.READY,
+                    isIndexing = false,
+                    installedModels = setOf(LocalAiModelType.EMBEDDING_GEMMA)
+                )
+            )
+        )
+
+        val capability = coordinator.observeCapabilities().first()
+
+        assertFalse(capability.localModelsReady)
+    }
+
     private fun coordinator(
         aiRepo: InMemoryAiRepo,
         retrievalIndex: RetrievalIndex,
-        reasoningProvider: ReasoningProvider
+        reasoningProvider: ReasoningProvider,
+        runtimeState: MutableStateFlow<LocalModelRuntimeState> = MutableStateFlow(
+            LocalModelRuntimeState(
+                availability = RuntimeAvailability.READY,
+                isIndexing = false,
+                installedModels = setOf(LocalAiModelType.GEMMA_3N_REASONING)
+            )
+        )
     ): DefaultAiWorkflowCoordinator {
         val assessmentRepository = object : AssessmentRepository {
             override fun observeAllAssessments(): Flow<List<Assessment>> = flowOf(emptyList())
@@ -122,7 +152,7 @@ class DefaultAiWorkflowCoordinatorTest {
                 override suspend fun saveSettings(settings: AiProviderSettings) = Unit
             }),
             localModelRuntimeManager = object : LocalModelRuntimeManager {
-                override fun observeRuntimeState() = MutableStateFlow(LocalModelRuntimeState(RuntimeAvailability.READY, false, emptySet()))
+                override fun observeRuntimeState() = runtimeState
                 override suspend fun evaluateDeviceCompatibility(spec: LocalAiModelSpec) = throw UnsupportedOperationException()
                 override suspend fun ensureModelReady(spec: LocalAiModelSpec) = Result.success(Unit)
                 override suspend fun markModelError(type: LocalAiModelType, message: String) = Unit
