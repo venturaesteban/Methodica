@@ -167,9 +167,9 @@ class DefaultAiWorkflowCoordinatorTest {
             saveAiAnalysisEditsUseCase = SaveAiAnalysisEditsUseCase(aiRepo),
             observeAssessmentTopicsUseCase = ObserveAssessmentTopicsUseCase(assessmentTopicRepository),
             applyAiComplexityToTopicsUseCase = ApplyAiComplexityToTopicsUseCase(object : com.methodica.app.domain.repository.TopicRepository {
-                override fun observeTopicsBySubject(subjectId: Long): Flow<List<Topic>> = flowOf(emptyList())
+                override fun observeTopics(subjectId: Long): Flow<List<Topic>> = flowOf(emptyList())
                 override suspend fun getTopic(id: Long): Topic? = null
-                override suspend fun saveTopic(topic: Topic): Long = topic.id
+                override suspend fun saveTopic(topic: Topic) = Unit
                 override suspend fun deleteTopic(topic: Topic) = Unit
             }),
             generateAssessmentPlanUseCase = com.methodica.app.domain.usecase.planning.GenerateAssessmentPlanUseCase(

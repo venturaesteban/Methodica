@@ -8,6 +8,7 @@ import com.methodica.app.domain.ai.local.ActionProvider
 import com.methodica.app.domain.ai.local.ActionRequest
 import com.methodica.app.domain.ai.local.ChunkEmbedding
 import com.methodica.app.domain.ai.local.ChunkingStrategy
+import com.methodica.app.domain.ai.local.EmbeddingProvider
 import com.methodica.app.domain.ai.local.RetrievalHit
 import com.methodica.app.domain.ai.local.RetrievalIndex
 import com.methodica.app.domain.ai.local.RetrievalQuery
@@ -105,7 +106,7 @@ class ParagraphChunkingStrategy @Inject constructor() : ChunkingStrategy {
 class RoomBackedRetrievalIndex @Inject constructor(
     private val chunkDao: AiDocumentChunkDao,
     private val embeddingDao: AiChunkEmbeddingDao,
-    private val embeddingProvider: MediaPipeTextEmbeddingProvider
+    private val embeddingProvider: EmbeddingProvider
 ) : RetrievalIndex {
     override suspend fun upsert(chunks: List<TextChunk>, embeddings: List<ChunkEmbedding>): Result<Unit> = runCatching {
         if (chunks.isEmpty()) return@runCatching

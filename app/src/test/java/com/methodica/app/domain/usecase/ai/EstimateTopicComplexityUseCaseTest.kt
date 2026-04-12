@@ -143,6 +143,9 @@ class EstimateTopicComplexityUseCaseTest {
 
         override suspend fun buildAiResourceSummary(material: Material, maxChars: Int): String? =
             "Resumen sintetico de ${material.title}"
+
+        override suspend fun buildAiIndexableContent(material: Material, maxChars: Int): String? =
+            "Contenido indexable de ${material.title}"
     }
 
     private class FakeSubjectRepository : SubjectRepository {

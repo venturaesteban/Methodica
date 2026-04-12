@@ -42,7 +42,7 @@ class GemmaReasoningOutputParserTest {
 
         val result = parser.parse(raw)
 
-        assertTrue(result.isSuccess)
+        assertTrue(result.exceptionOrNull()?.message ?: "La salida deberia parsearse correctamente", result.isSuccess)
         assertEquals("Derivadas", result.getOrThrow().topicComplexities.first().topicName)
     }
 

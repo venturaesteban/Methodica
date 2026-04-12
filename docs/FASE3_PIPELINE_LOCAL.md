@@ -1,99 +1,131 @@
-# Fase 3.1 correctiva: embeddings semánticos locales reales (Android)
+# Fase 3.1 correctiva: embeddings semanticos locales reales (Android)
 
 ## Resultado
 
-Se sustituyó el proveedor de hashing por un proveedor semántico real local en Android usando **MediaPipe Tasks Text Embedder** (inferencia offline) y una integración operativa de modelo para `EMBEDDING_GEMMA`. El pipeline de chunking, persistencia Room, indexación incremental, filtros académicos y tracking de runs se mantiene.
+La integracion de embeddings deja de asumir un artefacto `.task` y pasa a un contrato explicito para `MediaPipe TextEmbedder` con modelo `.tflite`. El pipeline existente se mantiene intacto:
 
-## Proveedor definitivo
+- chunking
+- indexacion incremental
+- retrieval
+- `modelVersion`
+- reindexado al cambiar de version
 
-- **Proveedor activo**: `MediaPipeTextEmbeddingProvider`.
-- **Runtime**: `com.google.mediapipe:tasks-text`.
-- **Inferencia**: totalmente local, sin red durante embedding/query.
-- **Estado por defecto**: ya no existe hashing como camino principal.
+## Contrato tecnico correcto
 
-## Gestión operativa del modelo (implementada)
+- Provider activo: `MediaPipeTextEmbeddingProvider`
+- Runtime: `com.google.mediapipe:tasks-text`
+- API de inicializacion: `TextEmbedder.createFromFile(...)`
+- Formato esperado: `TFLite` compatible con `MediaPipe TextEmbedder`
+- Restriccion importante: si el modelo usa tensores `int32`, debe incluir metadatos/tokenizacion compatibles dentro del artefacto que se entregue al provider
 
-### Estrategia elegida
+Referencias usadas para fijar este contrato:
 
-1. **Ruta local canónica** (persistente en app private storage):
-   - `files/local_models/embeddinggemma/embeddinggemma-300m.task`
-2. **Inicialización en primer uso**:
-   - `ensureModelReady(spec)` valida compatibilidad (ABI 64-bit, RAM, espacio) y estado.
-3. **Obtención del modelo**:
-   - Intento 1: copiar desde `assets/models/embeddinggemma/embeddinggemma-300m.task`.
-   - Intento 2: descarga HTTP si `downloadUrl` está configurada en el `spec`.
-   - Si no hay asset ni URL, se marca estado `MISSING_MODEL` y falla explícitamente.
-4. **Integridad**:
-   - Si `expectedSha256` está definido, se valida SHA-256 antes de marcar `READY`.
-5. **Versionado**:
-   - `modelVersion = embeddinggemma-300m-task-v1` (provider).
-   - Se persiste en `ai_chunk_embeddings.modelVersion`.
-6. **No mezcla de índices incompatibles**:
-   - Retrieval SQL filtra por `modelVersion` del proveedor activo.
-   - La indexación incremental fuerza re-embedding cuando detecta versiones antiguas en chunks existentes.
+- `TextEmbedder` espera un modelo `TFLite` y no un `.task`: [Google AI Edge TextEmbedder](https://ai.google.dev/edge/api/mediapipe/java/com/google/mediapipe/tasks/text/textembedder/TextEmbedder?hl=es-419)
+- Archivos LiteRT publicados para EmbeddingGemma: [litert-community/embeddinggemma-300m](https://huggingface.co/litert-community/embeddinggemma-300m/tree/main)
 
-### Estados expuestos a UI/capabilities
+## Artefacto canonico que espera ahora Methodica
 
-Se persisten y propagan al runtime:
-- `MISSING_MODEL`
-- `DOWNLOADING`
-- `INITIALIZING`
-- `READY`
-- `INCOMPATIBLE_DEVICE`
-- `NO_SPACE`
-- `INTEGRITY_ERROR`
-- `ERROR`
+Methodica queda preparado para un artefacto canonico unico:
 
-## Bloqueo real sobre EmbeddingGemma y cómo queda resuelto
+- Archivo exacto: `embeddinggemma-300M_seq1024_mixed-precision.tflite`
+- Modelo logico: `EmbeddingGemma 300M`
+- Variante fijada en el proyecto: `seq1024`
+- Motivo: encaja mejor con el chunking actual de Methodica y evita seguir versionando contra un nombre generico falso
 
-### Bloqueo técnico real
+### Rutas exactas
 
-En el estado actual del repo, **no se incluye** el artefacto `.task` de EmbeddingGemma (pesado y normalmente distribuido fuera del repo). Sin ese archivo no puede crearse `TextEmbedder`.
+Ruta recomendada para empaquetado en el repo:
 
-Tipo de bloqueo: **provisión/artefacto de modelo** (no de arquitectura del pipeline).
+- `app/src/main/assets/models/embeddinggemma/embeddinggemma-300M_seq1024_mixed-precision.tflite`
 
-### Integración máxima viable implementada
+Ruta local canonica en `filesDir` que usa el runtime:
 
-- Runtime y provider reales listos para EmbeddingGemma.
-- Flujo operativo listo para:
-  - asset empaquetado, o
-  - descarga bajo configuración.
-- Si el artefacto no está, se informa estado explícito (`MISSING_MODEL`) en lugar de fallback falso.
+- `files/local_models/embeddinggemma/embeddinggemma-300M_seq1024_mixed-precision.tflite`
 
-## Pasos manuales mínimos inevitables (claros)
+Ruta absoluta tipica en dispositivo Android para esta app:
 
-> Necesarios solo si no se configura descarga automática y no se empaqueta en assets.
+- `/data/user/0/com.methodica.app/files/local_models/embeddinggemma/embeddinggemma-300M_seq1024_mixed-precision.tflite`
 
-1. Obtener un **modelo Text Embedder compatible con MediaPipe** para EmbeddingGemma en formato `.task`.
-2. Colocarlo en:
-   - `app/src/main/assets/models/embeddinggemma/embeddinggemma-300m.task` (para empaquetado),
-   - o proveerlo a `files/local_models/embeddinggemma/embeddinggemma-300m.task` en dispositivo.
-3. (Recomendado) Fijar SHA-256 en `MediaPipeTextEmbeddingProvider.EMBEDDING_SPEC.expectedSha256`.
-4. Verificar instalación:
-   - runtime pasa a `READY`,
-   - no aparece `MISSING_MODEL` ni `INTEGRITY_ERROR`,
-   - indexing/retrieval generan resultados.
+## Que cambio en codigo
 
-## Qué queda automatizado por código
+### `MediaPipeTextEmbeddingProvider`
 
-- Evaluación de compatibilidad del dispositivo.
-- Copia desde assets si existe modelo empaquetado.
-- Descarga HTTP si hay URL configurada.
-- Verificación de integridad SHA-256 (si se configura hash esperado).
-- Inicialización del runtime de embeddings.
-- Persistencia de estado del modelo para UI.
-- Reindexado incremental con invalidación automática por cambio de `modelVersion`.
-- Retrieval filtrado por versión del embedding para evitar contaminación con vectores legacy.
+- Ya no construye `TextEmbedder` con logica heredada de `.task`
+- Inicializa el runtime desde archivo con `TextEmbedder.createFromFile(...)`
+- Valida que el artefacto entregado sea `.tflite`
+- Si la inicializacion falla, persiste un error explicito para `EMBEDDING_GEMMA` con una pista util: el archivo debe ser un `TFLite` compatible con `TextEmbedder`
 
-## Validación y tests
+### `LocalAiModelSpec` de embeddings
 
-Se actualizaron pruebas de pipeline para cubrir:
-- retrieval con filtros académicos,
-- indexación incremental sin recalcular cuando no cambia contenido,
-- reindexación al cambiar versión de embeddings.
+El spec queda alineado al artefacto real:
+
+- `id = embeddinggemma-300m-seq1024`
+- `version = embeddinggemma-300m-textembedder-tflite-seq1024-v1`
+- `assetPath = models/embeddinggemma/embeddinggemma-300M_seq1024_mixed-precision.tflite`
+- `localRelativePath = local_models/embeddinggemma/embeddinggemma-300M_seq1024_mixed-precision.tflite`
+- `requiredDiskBytes = 256 MiB`
+- `requiredRamMb = 256`
+
+Este cambio de `version` fuerza el reindexado automatico de embeddings previos porque el retrieval y la indexacion ya filtran por `modelVersion`.
+
+## Que archivo tienes que descargar ahora
+
+Descarga este archivo concreto:
+
+- `embeddinggemma-300M_seq1024_mixed-precision.tflite`
+
+Fuente recomendada:
+
+- [litert-community/embeddinggemma-300m](https://huggingface.co/litert-community/embeddinggemma-300m/tree/main)
+
+## Hace falta algun artefacto adicional
+
+Para la integracion actual de Methodica, no.
+
+- Methodica solo carga un `.tflite`
+- No hay carga de sidecars desde el provider
+- Si el proveedor del modelo publica tambien `sentencepiece.model`, ese archivo no lo consume esta integracion
+
+Regla practica:
+
+- Si un paquete necesita un tokenizer externo para arrancar, ese paquete no es el artefacto correcto para este provider tal y como esta implementado ahora
+
+## Hash que debes calcular
+
+Debes calcular el `SHA-256` del archivo exacto que vayas a colocar:
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\app\src\main\assets\models\embeddinggemma\embeddinggemma-300M_seq1024_mixed-precision.tflite
+```
+
+Despues, copia ese valor en:
+
+- `MediaPipeTextEmbeddingProvider.EMBEDDING_SPEC.expectedSha256`
+
+Si decides no fijarlo todavia, la integridad fuerte quedara desactivada, pero el runtime seguira funcionando.
+
+## Validacion operativa paso a paso
+
+1. Coloca `embeddinggemma-300M_seq1024_mixed-precision.tflite` en `app/src/main/assets/models/embeddinggemma/`.
+2. Calcula su `SHA-256`.
+3. Pega el hash en `expectedSha256` si quieres validacion estricta.
+4. Ejecuta la app y dispara un flujo que necesite embeddings o el warm-up del provider.
+5. Confirma que el runtime pasa a `READY`.
+6. Confirma que no aparecen `MISSING_MODEL`, `INTEGRITY_ERROR` ni un error de inicializacion de `TextEmbedder`.
+7. Confirma que se regeneran embeddings con `modelVersion = embeddinggemma-300m-textembedder-tflite-seq1024-v1`.
+
+## Que se mantiene intacto
+
+- `ParagraphChunkingStrategy`
+- persistencia Room de chunks y embeddings
+- indexacion incremental
+- invalidacion por cambio de `modelVersion`
+- retrieval filtrado por `modelVersion`
+- runtime manager existente
+- razonamiento local con Gemma 3n
 
 ## Riesgos abiertos
 
-- Si el artefacto EmbeddingGemma no se provee, el estado quedará en `MISSING_MODEL` (esperado).
-- La descarga automática requiere URL estable y distribución permitida del modelo.
-- Ajustes de RAM/espacio (`requiredRamMb`, `requiredDiskBytes`) pueden necesitar tuning por dispositivo real.
+- Si el archivo no se provee, el estado seguira siendo `MISSING_MODEL`
+- Si el `.tflite` que descargues no es compatible con `TextEmbedder`, la inicializacion fallara con error explicito
+- Si mas adelante decides usar otra variante de EmbeddingGemma, deberas cambiar nombre/version del spec para no mezclar indices

@@ -75,7 +75,7 @@ class LocalAiPipelineTest {
             materialRepository = materialRepo,
             chunkingStrategy = ParagraphChunkingStrategy(),
             embeddingProvider = provider,
-            retrievalIndex = InMemoryRetrievalIndex(chunkDao),
+            retrievalIndex = RoomBackedRetrievalIndex(chunkDao, embeddingDao, provider),
             chunkDao = chunkDao,
             embeddingDao = embeddingDao,
             indexingRunDao = runDao
@@ -101,7 +101,7 @@ class LocalAiPipelineTest {
             materialRepository = materialRepo,
             chunkingStrategy = ParagraphChunkingStrategy(),
             embeddingProvider = firstProvider,
-            retrievalIndex = InMemoryRetrievalIndex(chunkDao),
+            retrievalIndex = RoomBackedRetrievalIndex(chunkDao, embeddingDao, firstProvider),
             chunkDao = chunkDao,
             embeddingDao = embeddingDao,
             indexingRunDao = runDao
@@ -111,7 +111,7 @@ class LocalAiPipelineTest {
             materialRepository = materialRepo,
             chunkingStrategy = ParagraphChunkingStrategy(),
             embeddingProvider = secondProvider,
-            retrievalIndex = InMemoryRetrievalIndex(chunkDao),
+            retrievalIndex = RoomBackedRetrievalIndex(chunkDao, embeddingDao, secondProvider),
             chunkDao = chunkDao,
             embeddingDao = embeddingDao,
             indexingRunDao = runDao
@@ -142,30 +142,6 @@ class LocalAiPipelineTest {
             calls += chunks.size
             return delegate.embed(chunks)
         }
-    }
-
-    private class InMemoryRetrievalIndex(private val chunkDao: FakeChunkDao) : RetrievalIndex {
-        override suspend fun upsert(chunks: List<TextChunk>, embeddings: List<ChunkEmbedding>): Result<Unit> = runCatching {
-            chunkDao.upsert(chunks.map {
-                AiDocumentChunkEntity(
-                    externalId = it.externalId,
-                    subjectId = it.source.subjectId,
-                    assessmentId = it.source.assessmentId,
-                    topicId = it.source.topicId,
-                    materialId = it.source.materialId,
-                    documentId = it.source.documentId,
-                    sequence = it.sequence,
-                    sourceLabel = it.sourceLabel,
-                    content = it.content,
-                    tokenEstimate = it.tokenEstimate,
-                    contentHash = it.contentHash,
-                    updatedAt = it.updatedAt
-                )
-            })
-        }
-
-        override suspend fun query(request: RetrievalQuery): Result<List<RetrievalHit>> = Result.success(emptyList())
-        override suspend fun markSourceDirty(source: ChunkSourceRef): Result<Unit> = Result.success(Unit)
     }
 
     private class FakeMaterialRepository : MaterialRepository {
