@@ -86,7 +86,7 @@ class MediaPipeTextEmbeddingProvider @Inject constructor(
             localRelativePath = "local_models/$MODEL_DIRECTORY/$MODEL_FILENAME",
             requiredDiskBytes = 256L * 1024L * 1024L,
             requiredRamMb = 256,
-            expectedSha256 = null,
+            expectedSha256 = "8b0b8bbd0aa95f9f747c25a6c87cd05a8286933282660f6a50da877662917e31",
             downloadUrl = null
         )
     }
