@@ -1,5 +1,7 @@
 package com.methodica.app.data.ai.workflow
 
+import com.methodica.app.domain.ai.local.ReasoningProvider
+import com.methodica.app.domain.ai.local.ReasoningRequest
 import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
 import com.methodica.app.domain.ai.local.RetrievalIndex
 import com.methodica.app.domain.ai.local.RetrievalQuery
@@ -8,6 +10,12 @@ import com.methodica.app.domain.ai.workflow.AiWorkflowCapability
 import com.methodica.app.domain.ai.workflow.AiWorkflowCoordinator
 import com.methodica.app.domain.ai.workflow.AnalyzeAssessmentRequest
 import com.methodica.app.domain.ai.workflow.ApplyAnalysisEditsRequest
+import com.methodica.app.domain.model.AiAnalysis
+import com.methodica.app.domain.model.AiDocument
+import com.methodica.app.domain.model.AiDocumentSourceType
+import com.methodica.app.domain.model.ExamScopeAnalysis
+import com.methodica.app.domain.model.TopicComplexityAnalysis
+import com.methodica.app.domain.repository.AiAnalysisRepository
 import com.methodica.app.domain.repository.AssessmentRepository
 import com.methodica.app.domain.repository.StoredAiAnalysis
 import com.methodica.app.domain.usecase.ai.AnalyzeAssessmentWithAiUseCase
@@ -29,6 +37,8 @@ class DefaultAiWorkflowCoordinator @Inject constructor(
     private val localModelRuntimeManager: LocalModelRuntimeManager,
     private val assessmentRepository: AssessmentRepository,
     private val retrievalIndex: RetrievalIndex,
+    private val reasoningProvider: ReasoningProvider,
+    private val aiAnalysisRepository: AiAnalysisRepository,
     private val analyzeAssessmentWithAiUseCase: AnalyzeAssessmentWithAiUseCase,
     private val getLatestAiAnalysisForAssessmentUseCase: GetLatestAiAnalysisForAssessmentUseCase,
     private val saveAiAnalysisEditsUseCase: SaveAiAnalysisEditsUseCase,
@@ -46,6 +56,8 @@ class DefaultAiWorkflowCoordinator @Inject constructor(
             localModelsReady = runtime.availability == RuntimeAvailability.READY,
             runtimeMessage = when {
                 runtime.isIndexing -> "Indexando materiales locales…"
+                runtime.availability == RuntimeAvailability.INITIALIZING -> "Inicializando Gemma 3n local…"
+                runtime.availability == RuntimeAvailability.DOWNLOADING -> "Preparando runtime local de Gemma 3n…"
                 else -> runtime.lastError
             }
         )
@@ -56,38 +68,106 @@ class DefaultAiWorkflowCoordinator @Inject constructor(
             val assessment = assessmentRepository.getAssessment(request.assessmentId)
                 ?: error("No existe la evaluación ${request.assessmentId}")
 
-            val localEvidence = retrievalIndex.query(
-                RetrievalQuery(
-                    query = request.rawText,
-                    subjectId = assessment.subjectId,
-                    assessmentId = request.assessmentId,
-                    limit = 4
-                )
-            ).getOrDefault(emptyList())
+            val linkedTopics = observeAssessmentTopicsUseCase(request.assessmentId).first()
+            val retrievalQueries = buildList {
+                add(request.rawText.ifBlank { assessment.title })
+                add(assessment.title)
+                linkedTopics.take(4).forEach { add(it.name) }
+            }.distinct()
 
-            val enrichedPrompt = buildString {
-                append(request.rawText)
-                if (localEvidence.isNotEmpty()) {
-                    append("\n\nContexto recuperado localmente:\n")
-                    localEvidence.forEachIndexed { index, hit ->
-                        append("- Evidencia ${index + 1} (score=")
-                        append("%.3f".format(hit.score))
-                        append("): ")
-                        append(hit.content.take(360))
+            val evidence = retrievalQueries.flatMap { queryText ->
+                retrievalIndex.query(
+                    RetrievalQuery(
+                        query = queryText,
+                        subjectId = assessment.subjectId,
+                        assessmentId = request.assessmentId,
+                        limit = 4
+                    )
+                ).getOrDefault(emptyList())
+            }
+                .sortedByDescending { it.score }
+                .distinctBy { it.chunkExternalId }
+                .take(8)
+
+            val reasoningResult = reasoningProvider.reason(
+                ReasoningRequest(
+                    assessmentId = request.assessmentId,
+                    prompt = request.rawText.ifBlank {
+                        "Analiza el alcance evaluable y complejidad de ${assessment.title} con evidencia local."
+                    },
+                    evidence = evidence
+                )
+            )
+
+            if (reasoningResult.isSuccess) {
+                val output = reasoningResult.getOrThrow()
+                aiAnalysisRepository.storeAnalysis(
+                    document = AiDocument(
+                        subjectId = assessment.subjectId,
+                        assessmentId = request.assessmentId,
+                        materialId = null,
+                        sourceType = AiDocumentSourceType.RAW_TEXT,
+                        sourceLabel = "Gemma 3n local (${request.sourceLabel})",
+                        extractedText = buildString {
+                            append("Prompt: ")
+                            append(request.rawText)
+                            append("\n\nEvidencia usada:\n")
+                            evidence.forEachIndexed { index, hit ->
+                                append("${index + 1}. ")
+                                append(hit.content.take(320))
+                                append('\n')
+                            }
+                        }
+                    ),
+                    analysis = AiAnalysis(
+                        assessmentId = request.assessmentId,
+                        documentId = 0,
+                        summary = output.summary,
+                        confidence = output.confidence,
+                        requiresConfirmation = output.scope.requiresUserConfirmation
+                    ),
+                    scope = ExamScopeAnalysis(
+                        analysisId = 0,
+                        estimatedScope = output.scope.estimatedScope,
+                        justification = output.scope.justification,
+                        confidence = output.scope.confidence,
+                        requiresUserConfirmation = output.scope.requiresUserConfirmation
+                    ),
+                    topicComplexities = output.topicComplexities.map { topic ->
+                        TopicComplexityAnalysis(
+                            analysisId = 0,
+                            topicName = topic.topicName,
+                            isIncludedInScope = topic.isIncludedInScope,
+                            complexityLevel = topic.complexityLevel,
+                            recommendedHours = topic.recommendedHours,
+                            priority = topic.priority,
+                            requiresPractice = topic.requiresPractice,
+                            requiresSpacedReview = topic.requiresSpacedReview,
+                            rationale = topic.rationale
+                        )
+                    }
+                )
+            } else {
+                val enrichedPrompt = buildString {
+                    append(request.rawText)
+                    append("\n\nFALLBACK_HEURISTICO: runtime local no disponible.\n")
+                    evidence.forEachIndexed { index, hit ->
+                        append("- Evidencia ${index + 1}: ")
+                        append(hit.content.take(280))
                         append('\n')
                     }
                 }
+
+                analyzeAssessmentWithAiUseCase(
+                    assessmentId = request.assessmentId,
+                    rawText = enrichedPrompt,
+                    executionMode = request.executionMode,
+                    sourceLabel = "Fallback heurístico por fallo Gemma"
+                ).getOrElse { throw it }
+
+                getLatestAiAnalysisForAssessmentUseCase(request.assessmentId)
+                    ?: error("No se pudo recuperar el análisis de fallback")
             }
-
-            analyzeAssessmentWithAiUseCase(
-                assessmentId = request.assessmentId,
-                rawText = enrichedPrompt,
-                executionMode = request.executionMode,
-                sourceLabel = request.sourceLabel
-            ).getOrElse { throw it }
-
-            getLatestAiAnalysisForAssessmentUseCase(request.assessmentId)
-                ?: error("No se pudo recuperar el análisis generado")
         }
 
     override suspend fun getLatestAnalysis(assessmentId: Long): StoredAiAnalysis? =

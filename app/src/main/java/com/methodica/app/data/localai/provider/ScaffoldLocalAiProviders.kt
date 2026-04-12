@@ -8,8 +8,6 @@ import com.methodica.app.domain.ai.local.ActionProvider
 import com.methodica.app.domain.ai.local.ActionRequest
 import com.methodica.app.domain.ai.local.ChunkEmbedding
 import com.methodica.app.domain.ai.local.ChunkingStrategy
-import com.methodica.app.domain.ai.local.ReasoningProvider
-import com.methodica.app.domain.ai.local.ReasoningRequest
 import com.methodica.app.domain.ai.local.RetrievalHit
 import com.methodica.app.domain.ai.local.RetrievalIndex
 import com.methodica.app.domain.ai.local.RetrievalQuery
@@ -214,12 +212,6 @@ class RoomBackedRetrievalIndex @Inject constructor(
         val denom = sqrt(qNorm) * sqrt(cNorm)
         return if (denom <= 0f) 0f else dot / denom
     }
-}
-
-@Singleton
-class DeferredReasoningProvider @Inject constructor() : ReasoningProvider {
-    override suspend fun reason(request: ReasoningRequest): Result<String> =
-        Result.failure(IllegalStateException("Gemma 3n local aún no integrada en esta fase"))
 }
 
 @Singleton
