@@ -87,7 +87,7 @@ class MediaPipeTextEmbeddingProvider @Inject constructor(
             requiredDiskBytes = 256L * 1024L * 1024L,
             requiredRamMb = 256,
             expectedSha256 = "8b0b8bbd0aa95f9f747c25a6c87cd05a8286933282660f6a50da877662917e31",
-            downloadUrl = null
+            downloadUrl = "https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq1024_mixed-precision.tflite?download=true"
         )
     }
 }

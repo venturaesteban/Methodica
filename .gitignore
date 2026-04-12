@@ -31,3 +31,8 @@ out/
 
 # ===== Room schema exports (descomentar si se activa exportSchema=true) =====
 # app/schemas/
+
+# ===== Modelos locales de IA (demasiado grandes para Git; descarga manual) =====
+app/src/main/assets/models/gemma3n/
+*.litertlm
+*.task

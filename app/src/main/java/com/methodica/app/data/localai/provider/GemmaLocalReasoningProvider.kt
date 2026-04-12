@@ -151,15 +151,15 @@ class GemmaLocalReasoningProvider @Inject constructor(
 
     companion object {
         val GEMMA_3N_SPEC = LocalAiModelSpec(
-            id = "gemma-3n-e2b-it-int4",
+            id = "gemma-3n-e2b-it-int4-litertlm",
             type = LocalAiModelType.GEMMA_3N_REASONING,
-            version = "gemma-3n-e2b-it-int4-v1",
-            assetPath = "models/gemma3n/gemma-3n-e2b-it-int4.task",
-            localRelativePath = "local_models/gemma3n/gemma-3n-e2b-it-int4.task",
+            version = "gemma-3n-e2b-it-int4-litertlm-v1",
+            assetPath = "models/gemma3n/gemma-3n-E2B-it-int4.litertlm",
+            localRelativePath = "local_models/gemma3n/gemma-3n-E2B-it-int4.litertlm",
             requiredDiskBytes = 4_500L * 1024L * 1024L,
             requiredRamMb = 4096,
-            expectedSha256 = null,
-            downloadUrl = null
+            expectedSha256 = "2ed7bc3a0026c93d5b8a4544b352d9d00cd66ff0bac3ef6a20ac3d2cba4010d6",
+            downloadUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm?download=true"
         )
     }
 }
