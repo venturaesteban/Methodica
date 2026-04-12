@@ -4,7 +4,7 @@ import com.methodica.app.data.ai.workflow.DefaultAiWorkflowCoordinator
 import com.methodica.app.data.localai.provider.DeferredActionProvider
 import com.methodica.app.data.localai.pipeline.DefaultLocalAiIngestionPipeline
 import com.methodica.app.data.localai.provider.MediaPipeTextEmbeddingProvider
-import com.methodica.app.data.localai.provider.DeferredReasoningProvider
+import com.methodica.app.data.localai.provider.GemmaLocalReasoningProvider
 import com.methodica.app.data.localai.provider.ParagraphChunkingStrategy
 import com.methodica.app.data.localai.provider.RoomBackedRetrievalIndex
 import com.methodica.app.data.localai.runtime.RoomBackedLocalModelRuntimeManager
@@ -36,7 +36,7 @@ object LocalAiModule {
 
     @Provides
     @Singleton
-    fun provideReasoningProvider(impl: DeferredReasoningProvider): ReasoningProvider = impl
+    fun provideReasoningProvider(impl: GemmaLocalReasoningProvider): ReasoningProvider = impl
 
     @Provides
     @Singleton

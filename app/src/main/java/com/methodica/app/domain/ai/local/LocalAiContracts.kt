@@ -122,7 +122,7 @@ data class ReasoningRequest(
 )
 
 interface ReasoningProvider {
-    suspend fun reason(request: ReasoningRequest): Result<String>
+    suspend fun reason(request: ReasoningRequest): Result<ReasoningPlanOutput>
 }
 
 data class ActionRequest(
