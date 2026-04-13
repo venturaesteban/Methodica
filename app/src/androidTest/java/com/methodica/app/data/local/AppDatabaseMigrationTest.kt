@@ -25,7 +25,7 @@ class AppDatabaseMigrationTest {
     )
 
     @Test
-    fun migrate2To10_keepsSchemaValidAndCreatesLocalAiTables() {
+    fun migrate2To11_keepsSchemaValidAndCreatesLocalAiTables() {
         helper.createDatabase(dbName, 2).apply {
             execSQL(
                 """
@@ -98,14 +98,17 @@ class AppDatabaseMigrationTest {
                     'downloadUrl',
                     'expectedSha256',
                     'downloadedBytes',
-                    'totalBytes'
+                    'totalBytes',
+                    'noticeUrl',
+                    'termsUrl',
+                    'prohibitedUsePolicyUrl'
                 )
                 """.trimIndent()
             )
         )
         localStateRows.use {
             assertEquals(true, it.moveToFirst())
-            assertEquals(7, it.getInt(0))
+            assertEquals(10, it.getInt(0))
         }
 
         db.close()

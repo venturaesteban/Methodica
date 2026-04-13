@@ -8,6 +8,11 @@ enum class LocalAiModelType {
     FUNCTION_GEMMA
 }
 
+enum class LocalModelDownloadPolicy {
+    AUTOMATIC,
+    EXPLICIT_USER_ACTION
+}
+
 data class LocalAiModelSpec(
     val id: String,
     val type: LocalAiModelType,
@@ -17,7 +22,13 @@ data class LocalAiModelSpec(
     val requiredDiskBytes: Long,
     val requiredRamMb: Int,
     val expectedSha256: String? = null,
-    val redistributionRequiresLicenseConfirmation: Boolean = false
+    val redistributionRequiresLicenseConfirmation: Boolean = false,
+    val downloadPolicy: LocalModelDownloadPolicy = LocalModelDownloadPolicy.EXPLICIT_USER_ACTION,
+    val usageSummary: String,
+    val recommendedOnWifi: Boolean = false,
+    val defaultNoticeUrl: String? = null,
+    val defaultTermsUrl: String? = null,
+    val defaultProhibitedUsePolicyUrl: String? = null
 )
 
 data class DeviceCompatibilityReport(
@@ -62,7 +73,10 @@ data class DownloadableLocalModelDescriptor(
     val requiredRamMb: Int,
     val requiredDiskBytes: Long,
     val supportedAbis: List<String>,
-    val minSdk: Int
+    val minSdk: Int,
+    val noticeUrl: String? = null,
+    val termsUrl: String? = null,
+    val prohibitedUsePolicyUrl: String? = null
 )
 
 data class DownloadableLocalModelManifest(
@@ -75,12 +89,18 @@ data class LocalModelInstallState(
     val modelId: String,
     val displayName: String,
     val modelVersion: String,
+    val downloadPolicy: LocalModelDownloadPolicy,
+    val usageSummary: String,
     val status: LocalModelInstallStatus,
     val localRelativePath: String,
     val requiredDiskBytes: Long,
     val requiredRamMb: Int,
     val supportedAbis: List<String>,
     val minSdk: Int,
+    val recommendedOnWifi: Boolean,
+    val noticeUrl: String?,
+    val termsUrl: String?,
+    val prohibitedUsePolicyUrl: String?,
     val downloadedBytes: Long,
     val totalBytes: Long,
     val lastError: String?,
@@ -104,6 +124,7 @@ interface LocalModelRuntimeManager {
     fun observeModelInstallStates(): Flow<List<LocalModelInstallState>>
     suspend fun evaluateDeviceCompatibility(spec: LocalAiModelSpec): DeviceCompatibilityReport
     suspend fun refreshDownloadableModels(): Result<Unit>
+    suspend fun prepareAutomaticModels(): Result<Unit>
     suspend fun requestModelDownload(type: LocalAiModelType): Result<Unit>
     suspend fun cancelModelDownload(type: LocalAiModelType): Result<Unit>
     suspend fun deleteInstalledModel(type: LocalAiModelType): Result<Unit>

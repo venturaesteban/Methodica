@@ -1,7 +1,6 @@
 package com.methodica.app.data.localai.runtime
 
 import android.content.Context
-import com.methodica.app.BuildConfig
 import com.methodica.app.domain.ai.local.DownloadableLocalModelDescriptor
 import com.methodica.app.domain.ai.local.DownloadableLocalModelManifest
 import com.methodica.app.domain.ai.local.LocalAiModelType
@@ -12,8 +11,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 
 data class ResolvedModelDistribution(
     val definition: LocalAiModelDefinition,
@@ -24,7 +21,9 @@ data class ResolvedModelDistribution(
 
 @Singleton
 class LocalModelDistributionResolver @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val manifestConfig: LocalModelManifestConfig,
+    private val manifestParser: LocalModelManifestParser
 ) {
 
     suspend fun resolveAll(): List<ResolvedModelDistribution> {
@@ -75,12 +74,15 @@ class LocalModelDistributionResolver @Inject constructor(
             }
 
             connection.getInputStream().bufferedReader().use { reader ->
-                parseManifest(reader.readText())
+                manifestParser.parse(
+                    rawJson = reader.readText(),
+                    defaultMinSdk = context.applicationInfo.minSdkVersion
+                )
             }
         }
     }
 
-    private fun configuredManifestUrl(): String = BuildConfig.LOCAL_MODEL_MANIFEST_URL.trim()
+    private fun configuredManifestUrl(): String = manifestConfig.configuredManifestUrl()
 
     private fun resolveDefinition(
         definition: LocalAiModelDefinition,
@@ -150,38 +152,4 @@ class LocalModelDistributionResolver @Inject constructor(
         }
         return null
     }
-
-    private fun parseManifest(rawJson: String): DownloadableLocalModelManifest {
-        val root = JSONObject(rawJson)
-        val manifestVersion = root.optString("manifestVersion", "1").ifBlank { "1" }
-        val modelsJson = root.optJSONArray("models") ?: JSONArray()
-        val models = buildList {
-            for (index in 0 until modelsJson.length()) {
-                val item = modelsJson.optJSONObject(index) ?: continue
-                add(
-                    DownloadableLocalModelDescriptor(
-                        id = item.getString("id"),
-                        version = item.getString("version"),
-                        downloadUrl = item.getString("downloadUrl"),
-                        sha256 = item.getString("sha256"),
-                        sizeBytes = item.getLong("sizeBytes"),
-                        requiredRamMb = item.getInt("requiredRamMb"),
-                        requiredDiskBytes = item.getLong("requiredDiskBytes"),
-                        supportedAbis = item.getJSONArray("supportedAbis").toStringList(),
-                        minSdk = item.optInt("minSdk", context.applicationInfo.minSdkVersion)
-                    )
-                )
-            }
-        }
-        return DownloadableLocalModelManifest(
-            manifestVersion = manifestVersion,
-            models = models
-        )
-    }
 }
-
-private fun JSONArray.toStringList(): List<String> = buildList {
-    for (index in 0 until length()) {
-        add(optString(index))
-    }
-}.filter { it.isNotBlank() }

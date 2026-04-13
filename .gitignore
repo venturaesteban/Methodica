@@ -4,6 +4,7 @@ app/build
 
 # ===== Gradle =====
 .gradle/
+.gradle-user-home/
 gradle/wrapper/gradle-wrapper.jar
 
 # ===== Android Studio / IntelliJ =====

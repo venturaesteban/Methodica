@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -47,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.methodica.app.domain.ai.local.LocalModelDownloadPolicy
 import com.methodica.app.domain.ai.local.LocalAiModelType
 import com.methodica.app.domain.ai.local.LocalModelInstallState
 import com.methodica.app.domain.ai.local.LocalModelInstallStatus
@@ -302,7 +305,7 @@ fun SettingsScreen(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Modelos locales", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Methodica instala los modelos en almacenamiento privado. Si falta alguno, puedes descargarlo o reinstalarlo desde aquÃ­.",
+                "Methodica usa un manifest remoto de staging y guarda los modelos en almacenamiento privado. EmbeddingGemma se prepara automaticamente cuando falta; Gemma 3n solo se descarga bajo consentimiento explicito.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -312,14 +315,8 @@ fun SettingsScreen(
                     onDownload = { viewModel.onDownloadLocalModel(modelState.type) },
                     onCancel = { viewModel.onCancelLocalModelDownload(modelState.type) },
                     onDelete = { viewModel.onDeleteLocalModel(modelState.type) },
-                    onReinstall = { viewModel.onReinstallLocalModel(modelState.type) }
-                )
-            }
-            if (uiState.localModelStates.any { it.type == LocalAiModelType.GEMMA_3N_REASONING && it.redistributionRequiresLicenseConfirmation }) {
-                Text(
-                    "La redistribuciÃ³n remota de Gemma 3n debe confirmarse legalmente antes de publicar su entrada definitiva en el manifest.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    onReinstall = { viewModel.onReinstallLocalModel(modelState.type) },
+                    onOpenUrl = uriHandler::openUri
                 )
             }
         }
@@ -504,89 +501,220 @@ fun SettingsScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LocalModelStateCard(
     state: LocalModelInstallState,
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     onDelete: () -> Unit,
-    onReinstall: () -> Unit
+    onReinstall: () -> Unit,
+    onOpenUrl: (String) -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(state.displayName, style = MaterialTheme.typography.titleMedium)
-        Text(
-            buildString {
-                append("Estado: ")
-                append(state.status.name)
-                append(" • RAM min: ")
-                append(state.requiredRamMb)
-                append(" MB")
-                append(" • Disco min: ")
-                append(state.requiredDiskBytes / 1024L / 1024L)
-                append(" MB")
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+    val cardColors = when (state.type) {
+        LocalAiModelType.EMBEDDING_GEMMA -> CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
-        if (state.supportedAbis.isNotEmpty()) {
+        LocalAiModelType.GEMMA_3N_REASONING -> CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        )
+        else -> CardDefaults.cardColors()
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = cardColors
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(state.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        state.policyLabel(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    state.statusLabel(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = state.statusColor()
+                )
+            }
             Text(
-                "ABI soportadas: ${state.supportedAbis.joinToString()}",
+                state.usageSummary,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-        state.progressPercent?.let { progress ->
-            LinearProgressIndicator(
-                progress = { progress / 100f },
-                modifier = Modifier.fillMaxWidth()
-            )
             Text(
-                "Progreso: $progress% (${state.downloadedBytes / 1024L / 1024L} / ${state.totalBytes / 1024L / 1024L} MB)",
+                buildString {
+                    append("Tamano aprox.: ")
+                    append(formatBytes((if (state.totalBytes > 0L) state.totalBytes else state.requiredDiskBytes)))
+                    append(" • Espacio recomendado: ")
+                    append(formatBytes(state.requiredDiskBytes))
+                    append(" • RAM minima: ")
+                    append(state.requiredRamMb)
+                    append(" MB")
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-        state.lastError?.takeIf { it.isNotBlank() }?.let { detail ->
-            Text(
-                detail,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (state.status == LocalModelInstallStatus.READY) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.error
-                }
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            when (state.status) {
-                LocalModelInstallStatus.DOWNLOADING,
-                LocalModelInstallStatus.VERIFYING,
-                LocalModelInstallStatus.INSTALLING -> {
-                    Button(onClick = onCancel) {
-                        Text("Cancelar")
+            if (state.supportedAbis.isNotEmpty()) {
+                Text(
+                    "Compatibilidad ABI: ${state.supportedAbis.joinToString()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (state.recommendedOnWifi) {
+                Text(
+                    "Recomendacion: usa Wi-Fi estable antes de descargar este modelo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (state.type == LocalAiModelType.GEMMA_3N_REASONING) {
+                Text(
+                    "Uso local avanzado: solo disponible cuando el dispositivo pueda ejecutar Gemma 3n y el usuario lo haya aceptado.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            state.progressPercent?.let { progress ->
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "Progreso: $progress% (${formatBytes(state.downloadedBytes)} / ${formatBytes(state.totalBytes)})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            state.lastError?.takeIf { it.isNotBlank() }?.let { detail ->
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = state.statusMessageColor()
+                )
+            }
+            if (state.noticeUrl != null || state.termsUrl != null || state.prohibitedUsePolicyUrl != null) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "Avisos legales",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        state.noticeUrl?.let { url ->
+                            TextButton(onClick = { onOpenUrl(url) }) {
+                                Text("NOTICE")
+                            }
+                        }
+                        state.termsUrl?.let { url ->
+                            TextButton(onClick = { onOpenUrl(url) }) {
+                                Text("Gemma Terms")
+                            }
+                        }
+                        state.prohibitedUsePolicyUrl?.let { url ->
+                            TextButton(onClick = { onOpenUrl(url) }) {
+                                Text("Use Policy")
+                            }
+                        }
                     }
                 }
-                LocalModelInstallStatus.READY -> {
-                    Button(onClick = onReinstall, enabled = state.isDownloadConfigured) {
-                        Text("Reinstalar")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (state.status) {
+                    LocalModelInstallStatus.DOWNLOADING,
+                    LocalModelInstallStatus.VERIFYING,
+                    LocalModelInstallStatus.INSTALLING -> {
+                        Button(onClick = onCancel) {
+                            Text("Cancelar")
+                        }
                     }
-                    TextButton(onClick = onDelete) {
-                        Text("Borrar")
+                    LocalModelInstallStatus.READY -> {
+                        Button(onClick = onReinstall, enabled = state.isDownloadConfigured) {
+                            Text("Reinstalar")
+                        }
+                        TextButton(onClick = onDelete) {
+                            Text("Borrar")
+                        }
                     }
-                }
-                LocalModelInstallStatus.NOT_INSTALLED,
-                LocalModelInstallStatus.ERROR,
-                LocalModelInstallStatus.NO_SPACE,
-                LocalModelInstallStatus.INCOMPATIBLE_DEVICE -> {
-                    Button(onClick = onDownload, enabled = state.isDownloadConfigured) {
-                        Text(if (state.status == LocalModelInstallStatus.NOT_INSTALLED) "Descargar" else "Reintentar")
+                    LocalModelInstallStatus.NOT_INSTALLED,
+                    LocalModelInstallStatus.ERROR,
+                    LocalModelInstallStatus.NO_SPACE,
+                    LocalModelInstallStatus.INCOMPATIBLE_DEVICE -> {
+                        Button(onClick = onDownload, enabled = state.isDownloadConfigured) {
+                            Text(state.primaryActionLabel())
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LocalModelInstallState.statusColor() = when (status) {
+    LocalModelInstallStatus.READY -> MaterialTheme.colorScheme.primary
+    LocalModelInstallStatus.DOWNLOADING,
+    LocalModelInstallStatus.VERIFYING,
+    LocalModelInstallStatus.INSTALLING -> MaterialTheme.colorScheme.tertiary
+    LocalModelInstallStatus.ERROR,
+    LocalModelInstallStatus.NO_SPACE,
+    LocalModelInstallStatus.INCOMPATIBLE_DEVICE -> MaterialTheme.colorScheme.error
+    LocalModelInstallStatus.NOT_INSTALLED -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+@Composable
+private fun LocalModelInstallState.statusMessageColor() = when (status) {
+    LocalModelInstallStatus.ERROR,
+    LocalModelInstallStatus.NO_SPACE,
+    LocalModelInstallStatus.INCOMPATIBLE_DEVICE -> MaterialTheme.colorScheme.error
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun LocalModelInstallState.statusLabel(): String = when (status) {
+    LocalModelInstallStatus.NOT_INSTALLED -> "Falta"
+    LocalModelInstallStatus.DOWNLOADING -> "Descargando"
+    LocalModelInstallStatus.VERIFYING -> "Verificando"
+    LocalModelInstallStatus.INSTALLING -> "Instalando"
+    LocalModelInstallStatus.READY -> "Listo"
+    LocalModelInstallStatus.ERROR -> "Error"
+    LocalModelInstallStatus.NO_SPACE -> "Sin espacio"
+    LocalModelInstallStatus.INCOMPATIBLE_DEVICE -> "No compatible"
+}
+
+private fun LocalModelInstallState.policyLabel(): String = when (downloadPolicy) {
+    LocalModelDownloadPolicy.AUTOMATIC -> "Descarga automatica en segundo plano"
+    LocalModelDownloadPolicy.EXPLICIT_USER_ACTION -> "Descarga bajo consentimiento"
+}
+
+private fun LocalModelInstallState.primaryActionLabel(): String = when {
+    status == LocalModelInstallStatus.NOT_INSTALLED && downloadPolicy == LocalModelDownloadPolicy.EXPLICIT_USER_ACTION ->
+        "Descargar manualmente"
+    status == LocalModelInstallStatus.NOT_INSTALLED ->
+        "Descargar"
+    else -> "Reintentar"
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0L) return "Pendiente"
+    val gb = 1024L * 1024L * 1024L
+    val mb = 1024L * 1024L
+    return when {
+        bytes >= gb -> String.format(Locale.US, "%.1f GB", bytes.toDouble() / gb.toDouble())
+        else -> String.format(Locale.US, "%.0f MB", bytes.toDouble() / mb.toDouble())
     }
 }
 

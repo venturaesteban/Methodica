@@ -11,6 +11,7 @@ import com.methodica.app.domain.ai.local.DeviceCompatibilityReport
 import com.methodica.app.domain.ai.local.DownloadableLocalModelDescriptor
 import com.methodica.app.domain.ai.local.LocalAiModelSpec
 import com.methodica.app.domain.ai.local.LocalAiModelType
+import com.methodica.app.domain.ai.local.LocalModelDownloadPolicy
 import com.methodica.app.domain.ai.local.LocalModelInstallState
 import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
 import com.methodica.app.domain.ai.local.LocalModelRuntimeState
@@ -74,12 +75,19 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
                     modelId = definition.spec.id,
                     displayName = definition.spec.displayName,
                     modelVersion = definition.spec.version,
+                    downloadPolicy = definition.spec.downloadPolicy,
+                    usageSummary = definition.spec.usageSummary,
                     status = com.methodica.app.domain.ai.local.LocalModelInstallStatus.NOT_INSTALLED,
                     localRelativePath = definition.spec.localRelativePath,
                     requiredDiskBytes = definition.fallbackDownload?.requiredDiskBytes ?: definition.spec.requiredDiskBytes,
                     requiredRamMb = definition.fallbackDownload?.requiredRamMb ?: definition.spec.requiredRamMb,
                     supportedAbis = definition.fallbackDownload?.supportedAbis.orEmpty(),
                     minSdk = definition.fallbackDownload?.minSdk ?: Build.VERSION.SDK_INT,
+                    recommendedOnWifi = definition.spec.recommendedOnWifi,
+                    noticeUrl = definition.fallbackDownload?.noticeUrl ?: definition.spec.defaultNoticeUrl,
+                    termsUrl = definition.fallbackDownload?.termsUrl ?: definition.spec.defaultTermsUrl,
+                    prohibitedUsePolicyUrl = definition.fallbackDownload?.prohibitedUsePolicyUrl
+                        ?: definition.spec.defaultProhibitedUsePolicyUrl,
                     downloadedBytes = 0L,
                     totalBytes = definition.fallbackDownload?.sizeBytes ?: 0L,
                     lastError = null,
@@ -99,15 +107,32 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
         distributionResolver.resolveAll().forEach { resolved ->
             val existing = modelStateDao.getByModelType(resolved.definition.spec.type.name)
             val currentStatus = existing?.status ?: if (resolved.resolutionError == null) STATUS_NOT_INSTALLED else STATUS_ERROR
+            val mergedError = when {
+                resolved.descriptor != null && existing?.downloadUrl.isNullOrBlank() -> null
+                else -> existing?.lastError ?: resolved.resolutionError
+            }
             persistState(
                 definition = resolved.definition,
                 descriptor = resolved.descriptor,
                 status = currentStatus,
-                lastError = existing?.lastError ?: resolved.resolutionError,
+                lastError = mergedError,
                 downloadedBytes = existing?.downloadedBytes ?: 0L,
                 totalBytes = existing?.totalBytes ?: resolved.descriptor?.sizeBytes ?: 0L
             )
         }
+    }
+
+    override suspend fun prepareAutomaticModels(): Result<Unit> = runCatching {
+        refreshDownloadableModels().getOrThrow()
+        LocalAiModelCatalog.allDefinitions
+            .filter { it.spec.downloadPolicy == LocalModelDownloadPolicy.AUTOMATIC }
+            .forEach { definition ->
+                val existing = modelStateDao.getByModelType(definition.spec.type.name)
+                if (existing?.status in setOf(STATUS_DOWNLOADING, STATUS_VERIFYING, STATUS_INSTALLING, STATUS_INITIALIZING)) {
+                    return@forEach
+                }
+                runCatching { ensureModelReady(definition.spec).getOrThrow() }
+            }
     }
 
     override suspend fun requestModelDownload(type: LocalAiModelType): Result<Unit> = runCatching {
@@ -168,6 +193,7 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
     override suspend fun deleteInstalledModel(type: LocalAiModelType): Result<Unit> = runCatching {
         downloadScheduler.cancel(type)
         val definition = LocalAiModelCatalog.definitionFor(type)
+        val existing = modelStateDao.getByModelType(type.name)
         val modelFile = context.filesDir.resolve(definition.spec.localRelativePath)
         modelFile.delete()
         modelFile.parentFile?.listFiles()?.forEach { file ->
@@ -177,11 +203,11 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
         }
         persistState(
             definition = definition,
-            descriptor = definition.fallbackDownload,
+            descriptor = existing?.toDescriptor() ?: definition.fallbackDownload,
             status = STATUS_NOT_INSTALLED,
             lastError = null,
             downloadedBytes = 0L,
-            totalBytes = definition.fallbackDownload?.sizeBytes ?: 0L
+            totalBytes = existing?.totalBytes ?: definition.fallbackDownload?.sizeBytes ?: 0L
         )
     }
 
@@ -190,20 +216,32 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
             val definition = LocalAiModelCatalog.definitionFor(spec.type)
             val modelFile = context.filesDir.resolve(spec.localRelativePath)
             val existing = modelStateDao.getByModelType(spec.type.name)
+            val existingDescriptor = existing?.toDescriptor() ?: definition.fallbackDownload
 
             if (existing?.modelVersion?.isNotBlank() == true && existing.modelVersion != spec.version) {
                 modelFile.delete()
-                requestModelDownload(spec.type).getOrThrow()
-                error("Version de ${spec.displayName} obsoleta. Se ha programado la reinstalacion.")
+                if (definition.spec.downloadPolicy == LocalModelDownloadPolicy.AUTOMATIC) {
+                    requestModelDownload(spec.type).getOrThrow()
+                    error("Version de ${spec.displayName} obsoleta. Se ha programado la reinstalacion.")
+                }
+                persistState(
+                    definition = definition,
+                    descriptor = existingDescriptor,
+                    status = STATUS_NOT_INSTALLED,
+                    lastError = "${spec.displayName} necesita reinstalacion manual desde Ajustes para actualizarse.",
+                    downloadedBytes = 0L,
+                    totalBytes = existing?.totalBytes ?: existingDescriptor?.sizeBytes ?: 0L
+                )
+                error("${spec.displayName} necesita reinstalacion manual.")
             }
 
             if (modelFile.exists()) {
                 runCatching {
-                    verifyIntegrity(spec, modelFile, existing?.expectedSha256 ?: definition.fallbackDownload?.sha256)
+                    verifyIntegrity(spec, modelFile, existing?.expectedSha256 ?: existingDescriptor?.sha256)
                 }.onSuccess {
                     persistState(
                         definition = definition,
-                        descriptor = existing?.toDescriptor() ?: definition.fallbackDownload,
+                        descriptor = existingDescriptor,
                         status = STATUS_READY,
                         lastError = null,
                         downloadedBytes = modelFile.length(),
@@ -212,16 +250,27 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
                     return@withLock
                 }.onFailure {
                     modelFile.delete()
-                    requestModelDownload(spec.type)
+                    if (definition.spec.downloadPolicy == LocalModelDownloadPolicy.AUTOMATIC) {
+                        requestModelDownload(spec.type)
+                        persistState(
+                            definition = definition,
+                            descriptor = existingDescriptor,
+                            status = STATUS_ERROR,
+                            lastError = "El modelo ${spec.displayName} estaba corrupto y se ha solicitado una reinstalacion.",
+                            downloadedBytes = 0L,
+                            totalBytes = existing?.totalBytes ?: 0L
+                        )
+                        error("Integridad invalida para ${spec.displayName}. Se ha iniciado una reinstalacion.")
+                    }
                     persistState(
                         definition = definition,
-                        descriptor = existing?.toDescriptor() ?: definition.fallbackDownload,
+                        descriptor = existingDescriptor,
                         status = STATUS_ERROR,
-                        lastError = "El modelo ${spec.displayName} estaba corrupto y se ha solicitado una reinstalacion.",
+                        lastError = "${spec.displayName} estaba corrupto. Borralo o reinstalalo manualmente desde Ajustes.",
                         downloadedBytes = 0L,
                         totalBytes = existing?.totalBytes ?: 0L
                     )
-                    error("Integridad invalida para ${spec.displayName}. Se ha iniciado una reinstalacion.")
+                    error("Integridad invalida para ${spec.displayName}. Reinstalacion manual requerida.")
                 }
             }
 
@@ -229,11 +278,23 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
                 error(existing?.toRuntimeMessage() ?: "${spec.displayName} se esta preparando todavia.")
             }
 
+            if (definition.spec.downloadPolicy == LocalModelDownloadPolicy.EXPLICIT_USER_ACTION) {
+                val message = "${spec.displayName} requiere descarga manual y consentimiento explicito desde Ajustes."
+                persistState(
+                    definition = definition,
+                    descriptor = existingDescriptor,
+                    status = STATUS_NOT_INSTALLED,
+                    lastError = message,
+                    downloadedBytes = existing?.downloadedBytes ?: 0L,
+                    totalBytes = existing?.totalBytes ?: 0L
+                )
+                error(message)
+            }
             requestModelDownload(spec.type).getOrElse { cause ->
                 val message = cause.message ?: "No se pudo preparar ${spec.displayName}."
                 persistState(
                     definition = definition,
-                    descriptor = existing?.toDescriptor() ?: definition.fallbackDownload,
+                    descriptor = existingDescriptor,
                     status = STATUS_ERROR,
                     lastError = message,
                     downloadedBytes = existing?.downloadedBytes ?: 0L,
@@ -266,6 +327,9 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
                 minSdk = previous?.minSdk ?: Build.VERSION.SDK_INT,
                 downloadUrl = previous?.downloadUrl,
                 expectedSha256 = previous?.expectedSha256 ?: definition.spec.expectedSha256,
+                noticeUrl = previous?.noticeUrl ?: definition.spec.defaultNoticeUrl,
+                termsUrl = previous?.termsUrl ?: definition.spec.defaultTermsUrl,
+                prohibitedUsePolicyUrl = previous?.prohibitedUsePolicyUrl ?: definition.spec.defaultProhibitedUsePolicyUrl,
                 downloadedBytes = previous?.downloadedBytes ?: 0L,
                 totalBytes = previous?.totalBytes ?: 0L,
                 lastError = message,
@@ -356,6 +420,11 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
                 minSdk = descriptor?.minSdk ?: previous?.minSdk ?: Build.VERSION.SDK_INT,
                 downloadUrl = descriptor?.downloadUrl ?: previous?.downloadUrl,
                 expectedSha256 = descriptor?.sha256 ?: previous?.expectedSha256 ?: definition.spec.expectedSha256,
+                noticeUrl = descriptor?.noticeUrl ?: previous?.noticeUrl ?: definition.spec.defaultNoticeUrl,
+                termsUrl = descriptor?.termsUrl ?: previous?.termsUrl ?: definition.spec.defaultTermsUrl,
+                prohibitedUsePolicyUrl = descriptor?.prohibitedUsePolicyUrl
+                    ?: previous?.prohibitedUsePolicyUrl
+                    ?: definition.spec.defaultProhibitedUsePolicyUrl,
                 downloadedBytes = downloadedBytes,
                 totalBytes = totalBytes,
                 lastError = lastError,
@@ -395,6 +464,9 @@ private fun LocalAiModelStateEntity.toDescriptor(): DownloadableLocalModelDescri
         requiredRamMb = requiredRamMb,
         requiredDiskBytes = requiredDiskBytes,
         supportedAbis = supportedAbis,
-        minSdk = minSdk
+        minSdk = minSdk,
+        noticeUrl = noticeUrl,
+        termsUrl = termsUrl,
+        prohibitedUsePolicyUrl = prohibitedUsePolicyUrl
     )
 }

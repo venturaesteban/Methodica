@@ -127,6 +127,7 @@ class SettingsViewModel @Inject constructor(
 
         viewModelScope.launch {
             localModelRuntimeManager.refreshDownloadableModels()
+            localModelRuntimeManager.prepareAutomaticModels()
         }
     }
 

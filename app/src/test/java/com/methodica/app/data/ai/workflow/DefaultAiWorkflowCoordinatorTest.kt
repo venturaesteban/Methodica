@@ -157,6 +157,7 @@ class DefaultAiWorkflowCoordinatorTest {
                 override fun observeModelInstallStates(): Flow<List<LocalModelInstallState>> = flowOf(emptyList())
                 override suspend fun evaluateDeviceCompatibility(spec: LocalAiModelSpec) = throw UnsupportedOperationException()
                 override suspend fun refreshDownloadableModels() = Result.success(Unit)
+                override suspend fun prepareAutomaticModels() = Result.success(Unit)
                 override suspend fun requestModelDownload(type: LocalAiModelType) = Result.success(Unit)
                 override suspend fun cancelModelDownload(type: LocalAiModelType) = Result.success(Unit)
                 override suspend fun deleteInstalledModel(type: LocalAiModelType) = Result.success(Unit)

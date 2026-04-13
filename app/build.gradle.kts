@@ -11,7 +11,10 @@ plugins {
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties()
-val localModelManifestUrl = (findProperty("METHODICA_LOCAL_MODEL_MANIFEST_URL") as String?)?.trim().orEmpty()
+val defaultLocalModelManifestUrl = "https://storage.googleapis.com/methodica-bucket/manifests/methodica-models-v1.json"
+val localModelManifestUrl = ((findProperty("METHODICA_LOCAL_MODEL_MANIFEST_URL") as String?)?.trim())
+    .takeUnless { it.isNullOrBlank() }
+    ?: defaultLocalModelManifestUrl
 val hasReleaseKeystore = if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
     true

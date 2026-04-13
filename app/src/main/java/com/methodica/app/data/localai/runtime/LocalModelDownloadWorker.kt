@@ -40,7 +40,12 @@ class LocalModelDownloadWorker(
             ?: return Result.failure()
 
         val definition = LocalAiModelCatalog.definitionFor(modelType)
-        val resolver = LocalModelDistributionResolver(applicationContext)
+        val resolver = LocalModelDistributionResolver(
+            context = applicationContext,
+            manifestConfig = LocalModelManifestConfig(),
+            manifestParser = LocalModelManifestParser()
+        )
+        val artifactAccessResolver = LocalModelArtifactAccessResolver()
         val database = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java,
@@ -91,6 +96,7 @@ class LocalModelDownloadWorker(
             downloadToTempFile(
                 definition = definition,
                 descriptor = descriptor,
+                artifactAccess = artifactAccessResolver.resolve(descriptor),
                 tempFile = tempFile,
                 modelStateDao = modelStateDao
             )
@@ -142,13 +148,17 @@ class LocalModelDownloadWorker(
     private suspend fun downloadToTempFile(
         definition: LocalAiModelDefinition,
         descriptor: DownloadableLocalModelDescriptor,
+        artifactAccess: ResolvedLocalModelArtifactAccess,
         tempFile: File,
         modelStateDao: LocalAiModelStateDao
     ) {
-        val connection = (URL(descriptor.downloadUrl).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(artifactAccess.url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
             readTimeout = 60_000
             requestMethod = "GET"
+            artifactAccess.headers.forEach { (header, value) ->
+                setRequestProperty(header, value)
+            }
         }
         val responseCode = connection.responseCode
         if (responseCode !in 200..299) {
@@ -297,6 +307,9 @@ class LocalModelDownloadWorker(
                     minSdk = previous?.minSdk ?: 26,
                     downloadUrl = previous?.downloadUrl,
                     expectedSha256 = previous?.expectedSha256 ?: definition.spec.expectedSha256,
+                    noticeUrl = previous?.noticeUrl ?: definition.spec.defaultNoticeUrl,
+                    termsUrl = previous?.termsUrl ?: definition.spec.defaultTermsUrl,
+                    prohibitedUsePolicyUrl = previous?.prohibitedUsePolicyUrl ?: definition.spec.defaultProhibitedUsePolicyUrl,
                     downloadedBytes = 0L,
                     totalBytes = previous?.totalBytes ?: 0L,
                     lastError = "Descarga cancelada por el usuario.",
@@ -334,6 +347,9 @@ class LocalModelDownloadWorker(
                     minSdk = previous?.minSdk ?: 26,
                     downloadUrl = previous?.downloadUrl,
                     expectedSha256 = previous?.expectedSha256 ?: definition.spec.expectedSha256,
+                    noticeUrl = previous?.noticeUrl ?: definition.spec.defaultNoticeUrl,
+                    termsUrl = previous?.termsUrl ?: definition.spec.defaultTermsUrl,
+                    prohibitedUsePolicyUrl = previous?.prohibitedUsePolicyUrl ?: definition.spec.defaultProhibitedUsePolicyUrl,
                     downloadedBytes = previous?.downloadedBytes ?: 0L,
                     totalBytes = previous?.totalBytes ?: 0L,
                     lastError = error.message ?: "Fallo no clasificado descargando ${definition.spec.displayName}.",
@@ -369,6 +385,11 @@ class LocalModelDownloadWorker(
                 minSdk = descriptor?.minSdk ?: previous?.minSdk ?: Build.VERSION.SDK_INT,
                 downloadUrl = descriptor?.downloadUrl ?: previous?.downloadUrl,
                 expectedSha256 = descriptor?.sha256 ?: definition.spec.expectedSha256,
+                noticeUrl = descriptor?.noticeUrl ?: previous?.noticeUrl ?: definition.spec.defaultNoticeUrl,
+                termsUrl = descriptor?.termsUrl ?: previous?.termsUrl ?: definition.spec.defaultTermsUrl,
+                prohibitedUsePolicyUrl = descriptor?.prohibitedUsePolicyUrl
+                    ?: previous?.prohibitedUsePolicyUrl
+                    ?: definition.spec.defaultProhibitedUsePolicyUrl,
                 downloadedBytes = downloadedBytes,
                 totalBytes = totalBytes,
                 lastError = lastError,

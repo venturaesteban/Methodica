@@ -50,6 +50,8 @@ internal fun LocalAiModelStateEntity.toInstallState(definition: LocalAiModelDefi
         modelId = modelId.ifBlank { definition.spec.id },
         displayName = displayName.ifBlank { definition.spec.displayName },
         modelVersion = modelVersion.ifBlank { definition.spec.version },
+        downloadPolicy = definition.spec.downloadPolicy,
+        usageSummary = definition.spec.usageSummary,
         status = when (status) {
             STATUS_NOT_INSTALLED -> LocalModelInstallStatus.NOT_INSTALLED
             STATUS_MISSING_MODEL -> LocalModelInstallStatus.NOT_INSTALLED
@@ -60,6 +62,12 @@ internal fun LocalAiModelStateEntity.toInstallState(definition: LocalAiModelDefi
         requiredRamMb = if (requiredRamMb > 0) requiredRamMb else definition.spec.requiredRamMb,
         supportedAbis = supportedAbis,
         minSdk = if (minSdk > 0) minSdk else definition.fallbackDownload?.minSdk ?: 26,
+        recommendedOnWifi = definition.spec.recommendedOnWifi,
+        noticeUrl = noticeUrl ?: definition.fallbackDownload?.noticeUrl ?: definition.spec.defaultNoticeUrl,
+        termsUrl = termsUrl ?: definition.fallbackDownload?.termsUrl ?: definition.spec.defaultTermsUrl,
+        prohibitedUsePolicyUrl = prohibitedUsePolicyUrl
+            ?: definition.fallbackDownload?.prohibitedUsePolicyUrl
+            ?: definition.spec.defaultProhibitedUsePolicyUrl,
         downloadedBytes = downloadedBytes,
         totalBytes = totalBytes,
         lastError = lastError,

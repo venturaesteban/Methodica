@@ -4,12 +4,14 @@
 
 Methodica resuelve los modelos locales con un catálogo híbrido:
 
-- `LocalAiModelCatalog` fija el contrato que espera el binario de la app (`id`, `modelVersion`, ruta privada, SHA esperada y requisitos mínimos).
+- `LocalAiModelCatalog` fija el contrato que espera el binario de la app (`id`, `modelVersion`, ruta privada, SHA esperada, política de descarga y requisitos mínimos).
 - `LocalModelDistributionResolver` mezcla ese contrato con dos fuentes de distribución:
-  - descriptor conocido embebido para EmbeddingGemma,
+  - descriptor conocido embebido para compatibilidad de EmbeddingGemma,
   - manifest remoto configurable mediante `BuildConfig.LOCAL_MODEL_MANIFEST_URL`.
+- `LocalModelManifestConfig` encapsula el endpoint del manifest para poder sustituir más adelante la URL pública de staging por backend propio sin rehacer la lógica.
+- `LocalModelArtifactAccessResolver` desacopla el flujo de instalación del origen real del artefacto descargable: hoy devuelve la URL pública del manifest, mañana puede resolver backend, signed URLs o cabeceras efímeras.
 - `LocalModelDownloadWorker` descarga a un archivo temporal `.download`, verifica tamaño y `SHA-256`, mueve de forma atómica al destino final y limpia restos obsoletos.
-- `local_ai_model_state` persiste `displayName`, `downloadUrl`, `expectedSha256`, progreso (`downloadedBytes`, `totalBytes`) y estados de instalación.
+- `local_ai_model_state` persiste `displayName`, `downloadUrl`, `expectedSha256`, metadatos legales (`noticeUrl`, `termsUrl`, `prohibitedUsePolicyUrl`), progreso (`downloadedBytes`, `totalBytes`) y estados de instalación.
 
 ## 2. Estados persistidos
 
@@ -26,6 +28,11 @@ Estados soportados por la app:
 
 La UI de Ajustes se limita a representar estos estados y a ofrecer acciones de descarga, cancelación, reintento, borrado y reinstalación.
 
+Además, distingue entre:
+
+- `EmbeddingGemma`: descarga automática y preparación silenciosa cuando falta o se invalida su integridad.
+- `Gemma 3n`: descarga guiada y explícita, con consentimiento del usuario, recomendación de Wi-Fi y superficie legal visible.
+
 ## 3. Manifest remoto esperado
 
 El manifest remoto debe exponer por modelo:
@@ -38,7 +45,16 @@ El manifest remoto debe exponer por modelo:
 - `requiredRamMb`
 - `requiredDiskBytes`
 - `supportedAbis`
+- `noticeUrl`
+- `termsUrl`
+- `prohibitedUsePolicyUrl`
 - `minSdk`
+
+Manifest público de staging validado a fecha 2026-04-13:
+
+- URL: `https://storage.googleapis.com/methodica-bucket/manifests/methodica-models-v1.json`
+- Bucket: `methodica-bucket`
+- Modo: público, sin login
 
 Ejemplo esquemático:
 
@@ -55,20 +71,29 @@ Ejemplo esquemático:
       "requiredRamMb": 4096,
       "requiredDiskBytes": 4831838208,
       "supportedAbis": ["arm64-v8a"],
+      "noticeUrl": "https://storage.googleapis.com/methodica-bucket/legal/NOTICE_GEMMA.txt",
+      "termsUrl": "https://ai.google.dev/gemma/terms",
+      "prohibitedUsePolicyUrl": "https://ai.google.dev/gemma/prohibited_use_policy",
       "minSdk": 26
     }
   ]
 }
 ```
 
+Observaciones del staging actual:
+
+- El manifest publicado incluye `type` como campo adicional; la app no depende de ese campo para instalar.
+- El manifest no publica `manifestVersion` ni `minSdk`, y la app tolera ambos como opcionales aplicando `manifestVersion = "1"` y `minSdk` por defecto según la build.
+
 ## 4. Dependencia de licencia externa
 
 La infraestructura técnica ya está lista para Gemma 3n, pero la publicación de su descriptor remoto depende de confirmar que Methodica puede redistribuir legalmente ese artefacto.
 
-Consecuencia práctica:
+Consecuencia práctica para esta fase:
 
-- si la licencia queda aprobada, basta con publicar el manifest real y rellenar `METHODICA_LOCAL_MODEL_MANIFEST_URL`;
-- si la licencia no queda aprobada, Gemma 3n debe seguir fuera del canal de distribución automático y la app debe permanecer en flujo degradado honesto.
+- EmbeddingGemma puede validarse y descargarse desde staging sin login.
+- Gemma 3n se puede distribuir en staging sin login, pero la app lo ofrece siempre bajo consentimiento explícito y no lo descarga al arrancar.
+- Para producción, el siguiente paso no será cambiar el flujo de instalación sino sustituir la resolución del artefacto y del manifest por backend/signed URLs.
 
 ## 5. Decisión tomada para OCR y 16 KB
 
@@ -95,6 +120,8 @@ Esto permite predescarga cuando la app se instala desde Play Store. En instalaci
 - `zipalign -c -P 16 -v 4` sobre el APK generado pasa.
 - El APK ya no contiene `lib/x86_64/libmlkit_google_ocr_pipeline.so`.
 - El APK ya no contiene `*.tflite` ni `*.litertlm` de modelos locales.
+- El manifest público de staging responde `200` y publica tanto `EmbeddingGemma` como `Gemma 3n`.
+- `NOTICE_GEMMA.txt`, `Gemma Terms` y `Prohibited Use Policy` responden `200`.
 
 ## 7. Límite conocido y explícito
 

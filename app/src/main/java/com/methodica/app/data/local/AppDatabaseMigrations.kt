@@ -391,6 +391,29 @@ object AppDatabaseMigrations {
         }
     }
 
+    val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `noticeUrl` TEXT
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `termsUrl` TEXT
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `prohibitedUsePolicyUrl` TEXT
+                """.trimIndent()
+            )
+        }
+    }
+
     val ALL = arrayOf(
         MIGRATION_2_3,
         MIGRATION_3_4,
@@ -399,6 +422,7 @@ object AppDatabaseMigrations {
         MIGRATION_6_7,
         MIGRATION_7_8,
         MIGRATION_8_9,
-        MIGRATION_9_10
+        MIGRATION_9_10,
+        MIGRATION_10_11
     )
 }
