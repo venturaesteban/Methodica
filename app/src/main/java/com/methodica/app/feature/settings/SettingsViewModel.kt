@@ -3,6 +3,8 @@ package com.methodica.app.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.methodica.app.data.work.ReminderScheduler
+import com.methodica.app.domain.ai.local.LocalAiModelType
+import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
 import com.methodica.app.domain.model.AiProviderPreset
 import com.methodica.app.domain.model.AiProviderPresets
 import com.methodica.app.domain.model.AiProviderSettings
@@ -31,7 +33,8 @@ class SettingsViewModel @Inject constructor(
     private val observeAiProviderSettingsUseCase: ObserveAiProviderSettingsUseCase,
     private val saveAiProviderSettingsUseCase: SaveAiProviderSettingsUseCase,
     private val verifyAiConnectionUseCase:      com.methodica.app.domain.usecase.ai.VerifyAiConnectionUseCase,
-    private val reminderScheduler:              ReminderScheduler
+    private val reminderScheduler:              ReminderScheduler,
+    private val localModelRuntimeManager:       LocalModelRuntimeManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -114,6 +117,16 @@ class SettingsViewModel @Inject constructor(
                     )
                 }
             }
+        }
+
+        viewModelScope.launch {
+            localModelRuntimeManager.observeModelInstallStates().collect { states ->
+                _uiState.update { it.copy(localModelStates = states) }
+            }
+        }
+
+        viewModelScope.launch {
+            localModelRuntimeManager.refreshDownloadableModels()
         }
     }
 
@@ -343,5 +356,45 @@ class SettingsViewModel @Inject constructor(
 
     fun onConnectionResultConsumed() = _uiState.update { 
         it.copy(aiConnectionResult = null, aiConnectionError = null)
+    }
+
+    fun onDownloadLocalModel(type: LocalAiModelType) {
+        viewModelScope.launch {
+            val result = localModelRuntimeManager.requestModelDownload(type)
+            if (result.isFailure) {
+                _uiState.update { state ->
+                    state.copy(error = result.exceptionOrNull()?.message ?: "No se pudo iniciar la descarga del modelo local")
+                }
+            }
+        }
+    }
+
+    fun onCancelLocalModelDownload(type: LocalAiModelType) {
+        viewModelScope.launch {
+            localModelRuntimeManager.cancelModelDownload(type)
+        }
+    }
+
+    fun onDeleteLocalModel(type: LocalAiModelType) {
+        viewModelScope.launch {
+            val result = localModelRuntimeManager.deleteInstalledModel(type)
+            if (result.isFailure) {
+                _uiState.update { state ->
+                    state.copy(error = result.exceptionOrNull()?.message ?: "No se pudo borrar el modelo local")
+                }
+            }
+        }
+    }
+
+    fun onReinstallLocalModel(type: LocalAiModelType) {
+        viewModelScope.launch {
+            localModelRuntimeManager.deleteInstalledModel(type)
+            val result = localModelRuntimeManager.requestModelDownload(type)
+            if (result.isFailure) {
+                _uiState.update { state ->
+                    state.copy(error = result.exceptionOrNull()?.message ?: "No se pudo reinstalar el modelo local")
+                }
+            }
+        }
     }
 }

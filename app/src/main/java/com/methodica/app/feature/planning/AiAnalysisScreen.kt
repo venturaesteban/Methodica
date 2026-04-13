@@ -115,6 +115,24 @@ fun AiAnalysisScreen(
             )
         }
 
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = when {
+                    uiState.localModelsReady ->
+                        "Gemma 3n local lista: Methodica prioriza reasoning local con retrieval por embeddings en este dispositivo."
+                    !uiState.runtimeMessage.isNullOrBlank() && uiState.aiExecutionMode == AiExecutionMode.EXTERNAL ->
+                        "${uiState.runtimeMessage} Si mantienes IA configurada, ese proveedor solo se usara cuando el runtime local no pueda responder."
+                    !uiState.runtimeMessage.isNullOrBlank() ->
+                        "${uiState.runtimeMessage} Se usara fallback heuristico mientras Gemma 3n no este operativa."
+                    else ->
+                        "Gemma 3n local aun no esta operativa. Se usara fallback heuristico hasta que el runtime quede listo."
+                },
+                modifier = Modifier.padding(12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         if (uiState.aiExecutionMode == AiExecutionMode.EXTERNAL) {
             Text(
                 "Usar IA configurada consumirá créditos de tu suscripción.",

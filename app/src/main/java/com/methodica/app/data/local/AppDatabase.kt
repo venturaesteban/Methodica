@@ -59,7 +59,7 @@ import com.methodica.app.data.local.entity.LocalAiModelStateEntity
         AiIndexingRunEntity::class,
         LocalAiModelStateEntity::class
     ],
-    version      = 9,
+    version      = 10,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

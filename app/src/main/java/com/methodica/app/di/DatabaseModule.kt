@@ -41,7 +41,6 @@ object DatabaseModule {
         "methodica.db"
     )
         .addMigrations(*AppDatabaseMigrations.ALL)
-        .fallbackToDestructiveMigration()
         .build()
 
     @Provides

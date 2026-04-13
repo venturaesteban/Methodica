@@ -343,13 +343,62 @@ object AppDatabaseMigrations {
             )
         }
     }
-val ALL = arrayOf(
+
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `displayName` TEXT NOT NULL DEFAULT ''
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `supportedAbisCsv` TEXT NOT NULL DEFAULT ''
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `minSdk` INTEGER NOT NULL DEFAULT 26
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `downloadUrl` TEXT
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `expectedSha256` TEXT
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `downloadedBytes` INTEGER NOT NULL DEFAULT 0
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                ALTER TABLE `local_ai_model_state`
+                ADD COLUMN `totalBytes` INTEGER NOT NULL DEFAULT 0
+                """.trimIndent()
+            )
+        }
+    }
+
+    val ALL = arrayOf(
         MIGRATION_2_3,
         MIGRATION_3_4,
         MIGRATION_4_5,
         MIGRATION_5_6,
         MIGRATION_6_7,
         MIGRATION_7_8,
-        MIGRATION_8_9
+        MIGRATION_8_9,
+        MIGRATION_9_10
     )
 }

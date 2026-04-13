@@ -32,7 +32,8 @@ out/
 # ===== Room schema exports (descomentar si se activa exportSchema=true) =====
 # app/schemas/
 
-# ===== Modelos locales de IA (demasiado grandes para Git; descarga manual) =====
+# ===== Modelos locales de IA pesados (no versionados; provision manual) =====
+app/src/main/assets/models/**/*.tflite
 app/src/main/assets/models/gemma3n/
-*.litertlm
-*.task
+app/src/main/assets/models/**/*.litertlm
+app/src/main/assets/models/**/*.task

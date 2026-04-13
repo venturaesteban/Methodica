@@ -125,6 +125,27 @@ fun PlanningScreen(
                 )
             }
 
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Text(
+                    text = when {
+                        uiState.localModelsReady ->
+                            "Gemma 3n local lista: este flujo prioriza reasoning local con evidencia indexada en el dispositivo."
+                        !uiState.runtimeMessage.isNullOrBlank() && uiState.aiExecutionMode == AiExecutionMode.EXTERNAL ->
+                            "${uiState.runtimeMessage} Si mantienes IA configurada, ese proveedor solo entrara cuando el runtime local no responda."
+                        !uiState.runtimeMessage.isNullOrBlank() ->
+                            "${uiState.runtimeMessage} Se usara fallback heuristico hasta que Gemma 3n quede lista."
+                        else ->
+                            "Gemma 3n local aun no esta operativa. Methodica seguira en flujo degradado."
+                    },
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             if (uiState.aiExecutionMode == AiExecutionMode.EXTERNAL) {
                 Text(
                     "Usar IA configurada consumirá créditos de tu suscripción.",

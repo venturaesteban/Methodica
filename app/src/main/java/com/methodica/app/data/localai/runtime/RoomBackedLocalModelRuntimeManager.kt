@@ -1,4 +1,4 @@
-package com.methodica.app.data.localai.runtime
+﻿package com.methodica.app.data.localai.runtime
 
 import android.app.ActivityManager
 import android.content.Context
@@ -8,31 +8,31 @@ import com.methodica.app.data.local.dao.AiIndexingRunDao
 import com.methodica.app.data.local.dao.LocalAiModelStateDao
 import com.methodica.app.data.local.entity.LocalAiModelStateEntity
 import com.methodica.app.domain.ai.local.DeviceCompatibilityReport
+import com.methodica.app.domain.ai.local.DownloadableLocalModelDescriptor
 import com.methodica.app.domain.ai.local.LocalAiModelSpec
 import com.methodica.app.domain.ai.local.LocalAiModelType
+import com.methodica.app.domain.ai.local.LocalModelInstallState
 import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
 import com.methodica.app.domain.ai.local.LocalModelRuntimeState
 import com.methodica.app.domain.ai.local.RuntimeAvailability
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
-import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 
 @Singleton
 class RoomBackedLocalModelRuntimeManager @Inject constructor(
     private val modelStateDao: LocalAiModelStateDao,
     @ApplicationContext private val context: Context,
-    private val aiIndexingRunDao: AiIndexingRunDao
+    private val aiIndexingRunDao: AiIndexingRunDao,
+    private val distributionResolver: LocalModelDistributionResolver,
+    private val downloadScheduler: LocalModelDownloadScheduler
 ) : LocalModelRuntimeManager {
 
     private val modelInitMutex = Mutex()
@@ -44,50 +44,261 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
                 .mapNotNull { runCatching { LocalAiModelType.valueOf(it.modelType) }.getOrNull() }
                 .toSet()
 
-            val activeStatus = records.maxByOrNull { it.updatedAt }?.status
+            val hasDownloading = records.any { it.status == STATUS_DOWNLOADING }
+            val hasInstalling = records.any { it.status in setOf(STATUS_VERIFYING, STATUS_INSTALLING, STATUS_INITIALIZING) }
+            val hasErrors = records.any { it.status in TERMINAL_ERROR_STATUSES }
+            val latest = records.maxByOrNull { it.updatedAt }
+
             val availability = when {
-                activeStatus == STATUS_DOWNLOADING -> RuntimeAvailability.DOWNLOADING
-                activeStatus == STATUS_INITIALIZING -> RuntimeAvailability.INITIALIZING
-                records.any { it.status in TERMINAL_ERROR_STATUSES } -> RuntimeAvailability.ERROR
+                hasDownloading -> RuntimeAvailability.DOWNLOADING
+                hasInstalling -> RuntimeAvailability.INITIALIZING
                 installed.isNotEmpty() -> RuntimeAvailability.READY
+                hasErrors -> RuntimeAvailability.ERROR
                 else -> RuntimeAvailability.UNINITIALIZED
-            }
-            val runtimeMessage = records.maxByOrNull { it.updatedAt }?.let { state ->
-                when (state.status) {
-                    STATUS_MISSING_MODEL -> "Modelo local no disponible. Descárgalo o instálalo manualmente."
-                    STATUS_DOWNLOADING -> "Descargando modelo local (${state.modelId})…"
-                    STATUS_INITIALIZING -> "Inicializando runtime del modelo local…"
-                    STATUS_INCOMPATIBLE -> state.lastError ?: "Dispositivo no compatible con el modelo local"
-                    STATUS_NO_SPACE -> state.lastError ?: "Espacio insuficiente para instalar el modelo local"
-                    STATUS_INTEGRITY_ERROR -> state.lastError ?: "Falló la verificación de integridad del modelo"
-                    STATUS_ERROR -> state.lastError
-                    else -> null
-                }
             }
 
             LocalModelRuntimeState(
                 availability = availability,
                 isIndexing = runningCount > 0,
                 installedModels = installed,
-                lastError = runtimeMessage
+                lastError = latest?.toRuntimeMessage()
             )
         }
 
+    override fun observeModelInstallStates(): Flow<List<LocalModelInstallState>> =
+        modelStateDao.observeAll().map { rows ->
+            val byType = rows.associateBy { row -> row.modelType }
+            LocalAiModelCatalog.allDefinitions.map { definition ->
+                byType[definition.spec.type.name]?.toInstallState(definition) ?: LocalModelInstallState(
+                    type = definition.spec.type,
+                    modelId = definition.spec.id,
+                    displayName = definition.spec.displayName,
+                    modelVersion = definition.spec.version,
+                    status = com.methodica.app.domain.ai.local.LocalModelInstallStatus.NOT_INSTALLED,
+                    localRelativePath = definition.spec.localRelativePath,
+                    requiredDiskBytes = definition.fallbackDownload?.requiredDiskBytes ?: definition.spec.requiredDiskBytes,
+                    requiredRamMb = definition.fallbackDownload?.requiredRamMb ?: definition.spec.requiredRamMb,
+                    supportedAbis = definition.fallbackDownload?.supportedAbis.orEmpty(),
+                    minSdk = definition.fallbackDownload?.minSdk ?: Build.VERSION.SDK_INT,
+                    downloadedBytes = 0L,
+                    totalBytes = definition.fallbackDownload?.sizeBytes ?: 0L,
+                    lastError = null,
+                    updatedAt = 0L,
+                    isDownloadConfigured = definition.fallbackDownload != null,
+                    redistributionRequiresLicenseConfirmation = definition.spec.redistributionRequiresLicenseConfirmation
+                )
+            }
+        }
+
     override suspend fun evaluateDeviceCompatibility(spec: LocalAiModelSpec): DeviceCompatibilityReport {
+        val resolved = distributionResolver.resolve(spec.type)
+        return evaluateDeviceCompatibility(spec, resolved.descriptor)
+    }
+
+    override suspend fun refreshDownloadableModels(): Result<Unit> = runCatching {
+        distributionResolver.resolveAll().forEach { resolved ->
+            val existing = modelStateDao.getByModelType(resolved.definition.spec.type.name)
+            val currentStatus = existing?.status ?: if (resolved.resolutionError == null) STATUS_NOT_INSTALLED else STATUS_ERROR
+            persistState(
+                definition = resolved.definition,
+                descriptor = resolved.descriptor,
+                status = currentStatus,
+                lastError = existing?.lastError ?: resolved.resolutionError,
+                downloadedBytes = existing?.downloadedBytes ?: 0L,
+                totalBytes = existing?.totalBytes ?: resolved.descriptor?.sizeBytes ?: 0L
+            )
+        }
+    }
+
+    override suspend fun requestModelDownload(type: LocalAiModelType): Result<Unit> = runCatching {
+        val resolved = distributionResolver.resolve(type)
+        val descriptor = resolved.descriptor
+        if (descriptor == null) {
+            persistState(
+                definition = resolved.definition,
+                descriptor = null,
+                status = STATUS_ERROR,
+                lastError = resolved.resolutionError,
+                downloadedBytes = 0L,
+                totalBytes = 0L
+            )
+            error(resolved.resolutionError ?: "No hay distribucion remota configurada para ${resolved.definition.spec.displayName}.")
+        }
+
+        val compatibility = evaluateDeviceCompatibility(resolved.definition.spec, descriptor)
+        if (!compatibility.isSupported) {
+            val reason = compatibility.blockers.joinToString(" | ")
+            val status = if (reason.contains("Espacio insuficiente", ignoreCase = true)) STATUS_NO_SPACE else STATUS_INCOMPATIBLE
+            persistState(
+                definition = resolved.definition,
+                descriptor = descriptor,
+                status = status,
+                lastError = reason,
+                downloadedBytes = 0L,
+                totalBytes = descriptor.sizeBytes
+            )
+            error(reason)
+        }
+
+        persistState(
+            definition = resolved.definition,
+            descriptor = descriptor,
+            status = STATUS_DOWNLOADING,
+            lastError = null,
+            downloadedBytes = 0L,
+            totalBytes = descriptor.sizeBytes
+        )
+        downloadScheduler.enqueue(type)
+    }
+
+    override suspend fun cancelModelDownload(type: LocalAiModelType): Result<Unit> = runCatching {
+        downloadScheduler.cancel(type)
+        val definition = LocalAiModelCatalog.definitionFor(type)
+        val existing = modelStateDao.getByModelType(type.name)
+        persistState(
+            definition = definition,
+            descriptor = existing?.toDescriptor(),
+            status = STATUS_NOT_INSTALLED,
+            lastError = "Descarga cancelada por el usuario.",
+            downloadedBytes = 0L,
+            totalBytes = existing?.totalBytes ?: 0L
+        )
+    }
+
+    override suspend fun deleteInstalledModel(type: LocalAiModelType): Result<Unit> = runCatching {
+        downloadScheduler.cancel(type)
+        val definition = LocalAiModelCatalog.definitionFor(type)
+        val modelFile = context.filesDir.resolve(definition.spec.localRelativePath)
+        modelFile.delete()
+        modelFile.parentFile?.listFiles()?.forEach { file ->
+            if (file.name.endsWith(".download", ignoreCase = true) || file.isFile) {
+                file.delete()
+            }
+        }
+        persistState(
+            definition = definition,
+            descriptor = definition.fallbackDownload,
+            status = STATUS_NOT_INSTALLED,
+            lastError = null,
+            downloadedBytes = 0L,
+            totalBytes = definition.fallbackDownload?.sizeBytes ?: 0L
+        )
+    }
+
+    override suspend fun ensureModelReady(spec: LocalAiModelSpec): Result<Unit> = runCatching {
+        modelInitMutex.withLock {
+            val definition = LocalAiModelCatalog.definitionFor(spec.type)
+            val modelFile = context.filesDir.resolve(spec.localRelativePath)
+            val existing = modelStateDao.getByModelType(spec.type.name)
+
+            if (existing?.modelVersion?.isNotBlank() == true && existing.modelVersion != spec.version) {
+                modelFile.delete()
+                requestModelDownload(spec.type).getOrThrow()
+                error("Version de ${spec.displayName} obsoleta. Se ha programado la reinstalacion.")
+            }
+
+            if (modelFile.exists()) {
+                runCatching {
+                    verifyIntegrity(spec, modelFile, existing?.expectedSha256 ?: definition.fallbackDownload?.sha256)
+                }.onSuccess {
+                    persistState(
+                        definition = definition,
+                        descriptor = existing?.toDescriptor() ?: definition.fallbackDownload,
+                        status = STATUS_READY,
+                        lastError = null,
+                        downloadedBytes = modelFile.length(),
+                        totalBytes = existing?.totalBytes ?: modelFile.length()
+                    )
+                    return@withLock
+                }.onFailure {
+                    modelFile.delete()
+                    requestModelDownload(spec.type)
+                    persistState(
+                        definition = definition,
+                        descriptor = existing?.toDescriptor() ?: definition.fallbackDownload,
+                        status = STATUS_ERROR,
+                        lastError = "El modelo ${spec.displayName} estaba corrupto y se ha solicitado una reinstalacion.",
+                        downloadedBytes = 0L,
+                        totalBytes = existing?.totalBytes ?: 0L
+                    )
+                    error("Integridad invalida para ${spec.displayName}. Se ha iniciado una reinstalacion.")
+                }
+            }
+
+            if (existing?.status in setOf(STATUS_DOWNLOADING, STATUS_VERIFYING, STATUS_INSTALLING, STATUS_INITIALIZING)) {
+                error(existing?.toRuntimeMessage() ?: "${spec.displayName} se esta preparando todavia.")
+            }
+
+            requestModelDownload(spec.type).getOrElse { cause ->
+                val message = cause.message ?: "No se pudo preparar ${spec.displayName}."
+                persistState(
+                    definition = definition,
+                    descriptor = existing?.toDescriptor() ?: definition.fallbackDownload,
+                    status = STATUS_ERROR,
+                    lastError = message,
+                    downloadedBytes = existing?.downloadedBytes ?: 0L,
+                    totalBytes = existing?.totalBytes ?: 0L
+                )
+                error(message)
+            }
+            error("${spec.displayName} no estaba instalado. Se ha programado la descarga en segundo plano.")
+        }
+    }
+
+    override suspend fun releaseModels() {
+        // Los providers gestionan sus caches internas cuando reevalÃºan el fichero local.
+    }
+
+    override suspend fun markModelError(type: LocalAiModelType, message: String) {
+        val definition = LocalAiModelCatalog.definitionFor(type)
+        val previous = modelStateDao.getByModelType(type.name)
+        modelStateDao.upsert(
+            LocalAiModelStateEntity(
+                modelType = type.name,
+                modelId = previous?.modelId ?: definition.spec.id,
+                displayName = previous?.displayName ?: definition.spec.displayName,
+                modelVersion = previous?.modelVersion ?: definition.spec.version,
+                status = STATUS_ERROR,
+                localPath = previous?.localPath ?: definition.spec.localRelativePath,
+                requiredDiskBytes = previous?.requiredDiskBytes ?: definition.spec.requiredDiskBytes,
+                requiredRamMb = previous?.requiredRamMb ?: definition.spec.requiredRamMb,
+                supportedAbisCsv = previous?.supportedAbisCsv.orEmpty(),
+                minSdk = previous?.minSdk ?: Build.VERSION.SDK_INT,
+                downloadUrl = previous?.downloadUrl,
+                expectedSha256 = previous?.expectedSha256 ?: definition.spec.expectedSha256,
+                downloadedBytes = previous?.downloadedBytes ?: 0L,
+                totalBytes = previous?.totalBytes ?: 0L,
+                lastError = message,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    private suspend fun evaluateDeviceCompatibility(
+        spec: LocalAiModelSpec,
+        descriptor: DownloadableLocalModelDescriptor?
+    ): DeviceCompatibilityReport {
         val statFs = StatFs(context.filesDir.absolutePath)
         val availableDisk = statFs.availableBytes
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val availableRamMb = activityManager.memoryClass
+        val requiredDiskBytes = descriptor?.requiredDiskBytes ?: spec.requiredDiskBytes
+        val requiredRamMb = descriptor?.requiredRamMb ?: spec.requiredRamMb
+        val supportedAbis = descriptor?.supportedAbis.orEmpty()
+        val minSdk = descriptor?.minSdk ?: Build.VERSION.SDK_INT
 
         val blockers = buildList {
-            if (!Build.SUPPORTED_64_BIT_ABIS.any { it.contains("arm64") || it.contains("x86_64") }) {
-                add("ABI no compatible: se requiere arquitectura 64-bit para ${spec.id}.")
+            if (supportedAbis.isNotEmpty() && supportedAbis.none { abi -> abi in Build.SUPPORTED_ABIS }) {
+                add("ABI no compatible: ${spec.displayName} solo soporta ${supportedAbis.joinToString()}.")
             }
-            if (availableDisk < spec.requiredDiskBytes) {
-                add("Espacio insuficiente para ${spec.id}. Requiere ${spec.requiredDiskBytes} bytes.")
+            if (Build.VERSION.SDK_INT < minSdk) {
+                add("API no compatible: ${spec.displayName} requiere minSdk $minSdk.")
             }
-            if (availableRamMb < spec.requiredRamMb) {
-                add("RAM insuficiente para ${spec.id}. Requiere ${spec.requiredRamMb} MB.")
+            if (availableDisk < requiredDiskBytes) {
+                add("Espacio insuficiente para ${spec.displayName}. Requiere $requiredDiskBytes bytes.")
+            }
+            if (availableRamMb < requiredRamMb) {
+                add("RAM insuficiente para ${spec.displayName}. Requiere $requiredRamMb MB.")
             }
         }
         return DeviceCompatibilityReport(
@@ -98,117 +309,14 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
         )
     }
 
-    override suspend fun ensureModelReady(spec: LocalAiModelSpec): Result<Unit> = runCatching {
-        modelInitMutex.withLock {
-            persistState(spec = spec, status = STATUS_INITIALIZING, lastError = null)
-            val compatibility = evaluateDeviceCompatibility(spec)
-            if (!compatibility.isSupported) {
-                val reason = compatibility.blockers.joinToString(" | ")
-                val status = when {
-                    reason.contains("Espacio insuficiente") -> STATUS_NO_SPACE
-                    reason.contains("ABI no compatible") -> STATUS_INCOMPATIBLE
-                    else -> STATUS_ERROR
-                }
-                persistState(spec = spec, status = status, lastError = reason)
-                error(reason)
-            }
-
-            val modelFile = context.filesDir.resolve(spec.localRelativePath)
-            if (!modelFile.exists()) {
-                val installedFromAssets = installFromAssetsIfPresent(spec, modelFile)
-                if (!installedFromAssets) {
-                    val downloaded = downloadModelIfConfigured(spec, modelFile)
-                    if (!downloaded) {
-                        persistState(
-                            spec,
-                            STATUS_MISSING_MODEL,
-                            "No se encontró ${spec.assetPath} en assets y no hay URL de descarga configurada."
-                        )
-                        error("Modelo no disponible localmente")
-                    }
-                }
-            }
-
-            verifyIntegrity(spec, modelFile)
-            persistState(spec = spec, status = STATUS_READY, lastError = null)
-        }
-    }
-
-    override suspend fun releaseModels() {
-        // El provider de embeddings mantiene la instancia del runtime y la libera en GC.
-    }
-
-    override suspend fun markModelError(type: LocalAiModelType, message: String) {
-        val now = System.currentTimeMillis()
-        val previous = modelStateDao.getByModelType(type.name)
-        modelStateDao.upsert(
-            if (previous != null) {
-                previous.copy(
-                    status = STATUS_ERROR,
-                    lastError = message,
-                    updatedAt = now
-                )
-            } else {
-                LocalAiModelStateEntity(
-                    modelType = type.name,
-                    modelId = type.name.lowercase(),
-                    modelVersion = "unknown",
-                    status = STATUS_ERROR,
-                    localPath = "",
-                    requiredDiskBytes = 0L,
-                    requiredRamMb = 0,
-                    lastError = message,
-                    updatedAt = now
-                )
-            }
-        )
-    }
-
-    private suspend fun installFromAssetsIfPresent(spec: LocalAiModelSpec, destination: File): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            context.assets.open(spec.assetPath).use { input ->
-                destination.parentFile?.mkdirs()
-                FileOutputStream(destination).use { output -> input.copyTo(output) }
-            }
-            true
-        }.getOrDefault(false)
-    }
-
-    private suspend fun downloadModelIfConfigured(spec: LocalAiModelSpec, destination: File): Boolean {
-        val downloadUrl = spec.downloadUrl ?: return false
-        return withContext(Dispatchers.IO) {
-            runCatching {
-                persistState(spec, STATUS_DOWNLOADING, null)
-                destination.parentFile?.mkdirs()
-                val temp = File(destination.parentFile, "${destination.name}.download")
-                val connection = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 20_000
-                    readTimeout = 60_000
-                    requestMethod = "GET"
-                }
-                connection.inputStream.use { input ->
-                    FileOutputStream(temp).use { output -> input.copyTo(output) }
-                }
-                if (destination.exists()) destination.delete()
-                temp.renameTo(destination)
-                true
-            }.getOrElse {
-                persistState(spec, STATUS_ERROR, "Fallo descarga del modelo: ${it.message}")
-                false
-            }
-        }
-    }
-
-    private suspend fun verifyIntegrity(spec: LocalAiModelSpec, modelFile: File) {
+    private suspend fun verifyIntegrity(spec: LocalAiModelSpec, modelFile: File, expectedSha256: String?) {
         if (!modelFile.exists()) {
-            persistState(spec, STATUS_MISSING_MODEL, "No existe archivo del modelo en ${modelFile.absolutePath}")
-            error("Archivo de modelo no encontrado")
+            error("No existe el archivo de ${spec.displayName} en ${modelFile.absolutePath}")
         }
-        val expected = spec.expectedSha256 ?: return
+        if (expectedSha256.isNullOrBlank()) return
         val actual = sha256(modelFile)
-        if (!actual.equals(expected, ignoreCase = true)) {
-            persistState(spec, STATUS_INTEGRITY_ERROR, "SHA-256 inválido para ${spec.id}. Esperado=$expected actual=$actual")
-            error("Integridad del modelo inválida")
+        if (!actual.equals(expectedSha256, ignoreCase = true)) {
+            error("SHA-256 invalido para ${spec.displayName}. Esperado=$expectedSha256 actual=$actual")
         }
     }
 
@@ -225,37 +333,68 @@ class RoomBackedLocalModelRuntimeManager @Inject constructor(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private suspend fun persistState(spec: LocalAiModelSpec, status: String, lastError: String?) {
+    private suspend fun persistState(
+        definition: LocalAiModelDefinition,
+        descriptor: DownloadableLocalModelDescriptor?,
+        status: String,
+        lastError: String?,
+        downloadedBytes: Long,
+        totalBytes: Long
+    ) {
+        val previous = modelStateDao.getByModelType(definition.spec.type.name)
         modelStateDao.upsert(
             LocalAiModelStateEntity(
-                modelType = spec.type.name,
-                modelId = spec.id,
-                modelVersion = spec.version,
+                modelType = definition.spec.type.name,
+                modelId = descriptor?.id ?: previous?.modelId ?: definition.spec.id,
+                displayName = definition.spec.displayName,
+                modelVersion = descriptor?.version ?: previous?.modelVersion ?: definition.spec.version,
                 status = status,
-                localPath = spec.localRelativePath,
-                requiredDiskBytes = spec.requiredDiskBytes,
-                requiredRamMb = spec.requiredRamMb,
+                localPath = definition.spec.localRelativePath,
+                requiredDiskBytes = descriptor?.requiredDiskBytes ?: previous?.requiredDiskBytes ?: definition.spec.requiredDiskBytes,
+                requiredRamMb = descriptor?.requiredRamMb ?: previous?.requiredRamMb ?: definition.spec.requiredRamMb,
+                supportedAbisCsv = descriptor?.supportedAbis?.joinToString(",") ?: previous?.supportedAbisCsv.orEmpty(),
+                minSdk = descriptor?.minSdk ?: previous?.minSdk ?: Build.VERSION.SDK_INT,
+                downloadUrl = descriptor?.downloadUrl ?: previous?.downloadUrl,
+                expectedSha256 = descriptor?.sha256 ?: previous?.expectedSha256 ?: definition.spec.expectedSha256,
+                downloadedBytes = downloadedBytes,
+                totalBytes = totalBytes,
                 lastError = lastError,
                 updatedAt = System.currentTimeMillis()
             )
         )
     }
+}
 
-    private companion object {
-        const val STATUS_READY = "READY"
-        const val STATUS_ERROR = "ERROR"
-        const val STATUS_DOWNLOADING = "DOWNLOADING"
-        const val STATUS_INITIALIZING = "INITIALIZING"
-        const val STATUS_MISSING_MODEL = "MISSING_MODEL"
-        const val STATUS_INCOMPATIBLE = "INCOMPATIBLE_DEVICE"
-        const val STATUS_NO_SPACE = "NO_SPACE"
-        const val STATUS_INTEGRITY_ERROR = "INTEGRITY_ERROR"
-        val TERMINAL_ERROR_STATUSES = setOf(
-            STATUS_ERROR,
-            STATUS_MISSING_MODEL,
-            STATUS_INCOMPATIBLE,
-            STATUS_NO_SPACE,
-            STATUS_INTEGRITY_ERROR
-        )
-    }
+private fun LocalAiModelStateEntity.toRuntimeMessage(): String? = when (status) {
+    STATUS_NOT_INSTALLED,
+    STATUS_MISSING_MODEL -> lastError ?: "Modelo local no instalado todavia."
+    STATUS_DOWNLOADING -> "Descargando modelo local ($displayName)..."
+    STATUS_VERIFYING -> "Verificando integridad de $displayName..."
+    STATUS_INSTALLING,
+    STATUS_INITIALIZING -> "Instalando $displayName en almacenamiento privado..."
+    STATUS_INCOMPATIBLE -> lastError ?: "Dispositivo no compatible con el modelo local"
+    STATUS_NO_SPACE -> lastError ?: "Espacio insuficiente para instalar el modelo local"
+    STATUS_INTEGRITY_ERROR -> lastError ?: "La verificaciÃ³n de integridad del modelo ha fallado"
+    STATUS_ERROR -> lastError
+    else -> lastError
+}
+
+private fun LocalAiModelStateEntity.toDescriptor(): DownloadableLocalModelDescriptor? {
+    val url = downloadUrl?.takeIf { it.isNotBlank() } ?: return null
+    val sha = expectedSha256?.takeIf { it.isNotBlank() } ?: return null
+    val supportedAbis = supportedAbisCsv
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+    return DownloadableLocalModelDescriptor(
+        id = modelId,
+        version = modelVersion,
+        downloadUrl = url,
+        sha256 = sha,
+        sizeBytes = totalBytes,
+        requiredRamMb = requiredRamMb,
+        requiredDiskBytes = requiredDiskBytes,
+        supportedAbis = supportedAbis,
+        minSdk = minSdk
+    )
 }

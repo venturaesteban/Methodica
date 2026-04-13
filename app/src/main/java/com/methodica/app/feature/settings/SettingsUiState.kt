@@ -4,6 +4,7 @@ import com.methodica.app.domain.model.AiProviderPreset
 import com.methodica.app.domain.model.AiProviderPresets
 import com.methodica.app.domain.model.Degree
 import com.methodica.app.domain.model.Subject
+import com.methodica.app.domain.ai.local.LocalModelInstallState
 import java.time.DayOfWeek
 
 data class SettingsUiState(
@@ -35,7 +36,8 @@ data class SettingsUiState(
     val selectedProviderPreset: AiProviderPreset? = null,
     val availableModels:      List<String> = emptyList(),
     val showProviderDropdown: Boolean = false,
-    val showModelDropdown:    Boolean = false
+    val showModelDropdown:    Boolean = false,
+    val localModelStates:     List<LocalModelInstallState> = emptyList()
 ) {
     val availablePassedSubjects: List<Subject>
         get() = availableSubjects

@@ -2,6 +2,7 @@ package com.methodica.app.data.localai.provider
 
 import android.content.Context
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.methodica.app.data.localai.runtime.LocalAiModelCatalog
 import com.methodica.app.domain.ai.local.LocalAiModelSpec
 import com.methodica.app.domain.ai.local.LocalAiModelType
 import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
@@ -66,7 +67,7 @@ class GemmaLocalReasoningProvider @Inject constructor(
             )
         } catch (exception: IllegalStateException) {
             throw ReasoningRuntimeException.InitializationFailed(
-                "Fallo al inicializar LlmInference. Revisa modelo .task compatible con tasks-genai.",
+                "Fallo al inicializar LlmInference. Revisa el artefacto .litertlm compatible con tasks-genai.",
                 exception
             )
         } catch (exception: RuntimeException) {
@@ -150,17 +151,8 @@ class GemmaLocalReasoningProvider @Inject constructor(
     """.trimIndent()
 
     companion object {
-        val GEMMA_3N_SPEC = LocalAiModelSpec(
-            id = "gemma-3n-e2b-it-int4-litertlm",
-            type = LocalAiModelType.GEMMA_3N_REASONING,
-            version = "gemma-3n-e2b-it-int4-litertlm-v1",
-            assetPath = "models/gemma3n/gemma-3n-E2B-it-int4.litertlm",
-            localRelativePath = "local_models/gemma3n/gemma-3n-E2B-it-int4.litertlm",
-            requiredDiskBytes = 4_500L * 1024L * 1024L,
-            requiredRamMb = 4096,
-            expectedSha256 = "2ed7bc3a0026c93d5b8a4544b352d9d00cd66ff0bac3ef6a20ac3d2cba4010d6",
-            downloadUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm?download=true"
-        )
+        val GEMMA_3N_SPEC: LocalAiModelSpec =
+            LocalAiModelCatalog.definitionFor(LocalAiModelType.GEMMA_3N_REASONING).spec
     }
 }
 

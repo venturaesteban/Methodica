@@ -11,6 +11,7 @@ plugins {
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties()
+val localModelManifestUrl = (findProperty("METHODICA_LOCAL_MODEL_MANIFEST_URL") as String?)?.trim().orEmpty()
 val hasReleaseKeystore = if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
     true
@@ -28,6 +29,11 @@ android {
         targetSdk     = 35
         versionCode   = 1
         versionName   = "0.1.0"
+        buildConfigField(
+            "String",
+            "LOCAL_MODEL_MANIFEST_URL",
+            "\"${localModelManifestUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
     }
 
     signingConfigs {
@@ -62,6 +68,14 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    androidResources {
+        ignoreAssetsPatterns += "*.tflite"
+        ignoreAssetsPatterns += "*.litertlm"
+        ignoreAssetsPatterns += "*.task"
+        noCompress += listOf("tflite", "litertlm", "task")
     }
 
     lint {
@@ -75,6 +89,7 @@ android {
 
     ksp {
         arg("room.schemaLocation", "$projectDir/schemas")
+        arg("room.generateKotlin", "true")
     }
 }
 
@@ -116,7 +131,7 @@ dependencies {
 
     // PDF parsing (resumen textual para IA)
     implementation(libs.pdfbox.android)
-    implementation(libs.mlkit.text.recognition)
+    implementation(libs.google.play.services.mlkit.text.recognition)
     implementation(libs.google.play.services.tasks)
     implementation(libs.mediapipe.tasks.text)
     implementation(libs.mediapipe.tasks.genai)

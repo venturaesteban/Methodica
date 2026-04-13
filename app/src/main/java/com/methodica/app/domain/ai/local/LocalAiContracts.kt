@@ -11,13 +11,13 @@ enum class LocalAiModelType {
 data class LocalAiModelSpec(
     val id: String,
     val type: LocalAiModelType,
+    val displayName: String,
     val version: String,
-    val assetPath: String,
     val localRelativePath: String,
     val requiredDiskBytes: Long,
     val requiredRamMb: Int,
     val expectedSha256: String? = null,
-    val downloadUrl: String? = null
+    val redistributionRequiresLicenseConfirmation: Boolean = false
 )
 
 data class DeviceCompatibilityReport(
@@ -42,9 +42,71 @@ data class LocalModelRuntimeState(
     val lastError: String? = null
 )
 
+enum class LocalModelInstallStatus {
+    NOT_INSTALLED,
+    DOWNLOADING,
+    VERIFYING,
+    INSTALLING,
+    READY,
+    ERROR,
+    INCOMPATIBLE_DEVICE,
+    NO_SPACE
+}
+
+data class DownloadableLocalModelDescriptor(
+    val id: String,
+    val version: String,
+    val downloadUrl: String,
+    val sha256: String,
+    val sizeBytes: Long,
+    val requiredRamMb: Int,
+    val requiredDiskBytes: Long,
+    val supportedAbis: List<String>,
+    val minSdk: Int
+)
+
+data class DownloadableLocalModelManifest(
+    val manifestVersion: String,
+    val models: List<DownloadableLocalModelDescriptor>
+)
+
+data class LocalModelInstallState(
+    val type: LocalAiModelType,
+    val modelId: String,
+    val displayName: String,
+    val modelVersion: String,
+    val status: LocalModelInstallStatus,
+    val localRelativePath: String,
+    val requiredDiskBytes: Long,
+    val requiredRamMb: Int,
+    val supportedAbis: List<String>,
+    val minSdk: Int,
+    val downloadedBytes: Long,
+    val totalBytes: Long,
+    val lastError: String?,
+    val updatedAt: Long,
+    val isDownloadConfigured: Boolean,
+    val redistributionRequiresLicenseConfirmation: Boolean
+) {
+    val progressPercent: Int?
+        get() = if (totalBytes <= 0L) null else ((downloadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100)
+
+    val isBusy: Boolean
+        get() = status in setOf(
+            LocalModelInstallStatus.DOWNLOADING,
+            LocalModelInstallStatus.VERIFYING,
+            LocalModelInstallStatus.INSTALLING
+        )
+}
+
 interface LocalModelRuntimeManager {
     fun observeRuntimeState(): Flow<LocalModelRuntimeState>
+    fun observeModelInstallStates(): Flow<List<LocalModelInstallState>>
     suspend fun evaluateDeviceCompatibility(spec: LocalAiModelSpec): DeviceCompatibilityReport
+    suspend fun refreshDownloadableModels(): Result<Unit>
+    suspend fun requestModelDownload(type: LocalAiModelType): Result<Unit>
+    suspend fun cancelModelDownload(type: LocalAiModelType): Result<Unit>
+    suspend fun deleteInstalledModel(type: LocalAiModelType): Result<Unit>
     suspend fun ensureModelReady(spec: LocalAiModelSpec): Result<Unit>
     suspend fun markModelError(type: LocalAiModelType, message: String)
     suspend fun releaseModels()

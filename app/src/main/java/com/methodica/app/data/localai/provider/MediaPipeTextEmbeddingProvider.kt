@@ -2,9 +2,9 @@ package com.methodica.app.data.localai.provider
 
 import android.content.Context
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder
+import com.methodica.app.data.localai.runtime.LocalAiModelCatalog
 import com.methodica.app.domain.ai.local.ChunkEmbedding
 import com.methodica.app.domain.ai.local.EmbeddingProvider
-import com.methodica.app.domain.ai.local.LocalAiModelSpec
 import com.methodica.app.domain.ai.local.LocalAiModelType
 import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
 import com.methodica.app.domain.ai.local.TextChunk
@@ -25,6 +25,8 @@ class MediaPipeTextEmbeddingProvider @Inject constructor(
     private val mutex = Mutex()
     @Volatile
     private var textEmbedder: TextEmbedder? = null
+    @Volatile
+    private var loadedModelPath: String? = null
 
     override suspend fun embed(chunks: List<TextChunk>): Result<List<ChunkEmbedding>> = runCatching {
         if (chunks.isEmpty()) return@runCatching emptyList()
@@ -46,9 +48,12 @@ class MediaPipeTextEmbeddingProvider @Inject constructor(
     }
 
     private suspend fun ensureEmbedder(): TextEmbedder = mutex.withLock {
-        textEmbedder?.let { return it }
-        runtimeManager.ensureModelReady(EMBEDDING_SPEC).getOrThrow()
         val modelFile = context.filesDir.resolve(EMBEDDING_SPEC.localRelativePath)
+        textEmbedder?.takeIf { loadedModelPath == modelFile.absolutePath && modelFile.exists() }?.let { return it }
+        textEmbedder?.close()
+        textEmbedder = null
+
+        runtimeManager.ensureModelReady(EMBEDDING_SPEC).getOrThrow()
         if (!modelFile.name.endsWith(TFLITE_EXTENSION, ignoreCase = true)) {
             val message = "TextEmbedder requiere un modelo .tflite y Methodica encontro ${modelFile.name}."
             runtimeManager.markModelError(LocalAiModelType.EMBEDDING_GEMMA, message)
@@ -70,24 +75,13 @@ class MediaPipeTextEmbeddingProvider @Inject constructor(
             throw IllegalStateException(message, cause)
         }
         textEmbedder = created
+        loadedModelPath = modelFile.absolutePath
         created
     }
 
     companion object {
-        private const val MODEL_DIRECTORY = "embeddinggemma"
-        private const val MODEL_FILENAME = "embeddinggemma-300M_seq1024_mixed-precision.tflite"
         private const val TFLITE_EXTENSION = ".tflite"
 
-        val EMBEDDING_SPEC = LocalAiModelSpec(
-            id = "embeddinggemma-300m-seq1024",
-            type = LocalAiModelType.EMBEDDING_GEMMA,
-            version = "embeddinggemma-300m-textembedder-tflite-seq1024-v1",
-            assetPath = "models/$MODEL_DIRECTORY/$MODEL_FILENAME",
-            localRelativePath = "local_models/$MODEL_DIRECTORY/$MODEL_FILENAME",
-            requiredDiskBytes = 256L * 1024L * 1024L,
-            requiredRamMb = 256,
-            expectedSha256 = "8b0b8bbd0aa95f9f747c25a6c87cd05a8286933282660f6a50da877662917e31",
-            downloadUrl = "https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq1024_mixed-precision.tflite?download=true"
-        )
+        val EMBEDDING_SPEC = LocalAiModelCatalog.definitionFor(LocalAiModelType.EMBEDDING_GEMMA).spec
     }
 }

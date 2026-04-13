@@ -35,7 +35,6 @@ class ReminderWorker(
             "methodica.db"
         )
             .addMigrations(*AppDatabaseMigrations.ALL)
-            .fallbackToDestructiveMigration()
             .build()
 
         return try {

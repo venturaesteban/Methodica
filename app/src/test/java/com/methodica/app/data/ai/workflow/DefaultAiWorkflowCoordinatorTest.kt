@@ -9,6 +9,7 @@ import com.methodica.app.domain.ai.LlmProvider
 import com.methodica.app.domain.ai.local.ChunkSourceRef
 import com.methodica.app.domain.ai.local.LocalAiModelSpec
 import com.methodica.app.domain.ai.local.LocalAiModelType
+import com.methodica.app.domain.ai.local.LocalModelInstallState
 import com.methodica.app.domain.ai.local.LocalModelRuntimeManager
 import com.methodica.app.domain.ai.local.LocalModelRuntimeState
 import com.methodica.app.domain.ai.local.ReasoningPlanOutput
@@ -153,7 +154,12 @@ class DefaultAiWorkflowCoordinatorTest {
             }),
             localModelRuntimeManager = object : LocalModelRuntimeManager {
                 override fun observeRuntimeState() = runtimeState
+                override fun observeModelInstallStates(): Flow<List<LocalModelInstallState>> = flowOf(emptyList())
                 override suspend fun evaluateDeviceCompatibility(spec: LocalAiModelSpec) = throw UnsupportedOperationException()
+                override suspend fun refreshDownloadableModels() = Result.success(Unit)
+                override suspend fun requestModelDownload(type: LocalAiModelType) = Result.success(Unit)
+                override suspend fun cancelModelDownload(type: LocalAiModelType) = Result.success(Unit)
+                override suspend fun deleteInstalledModel(type: LocalAiModelType) = Result.success(Unit)
                 override suspend fun ensureModelReady(spec: LocalAiModelSpec) = Result.success(Unit)
                 override suspend fun markModelError(type: LocalAiModelType, message: String) = Unit
                 override suspend fun releaseModels() = Unit

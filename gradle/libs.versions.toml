@@ -1,13 +1,13 @@
 [versions]
-agp                  = "8.8.0"
-kotlin               = "2.1.0"
-ksp                  = "2.1.0-1.0.29"
+agp                  = "9.1.0"
+kotlin               = "2.2.10"
+ksp                  = "2.3.2"
 coreKtx              = "1.15.0"
 activityCompose      = "1.9.3"
 composeBom           = "2024.12.01"
 navigationCompose    = "2.8.5"
 lifecycle            = "2.8.7"
-room                 = "2.6.1"
+room                 = "2.7.0-alpha11"
 datastore            = "1.1.1"
 workmanager          = "2.9.1"
 coroutines           = "1.9.0"
@@ -16,7 +16,7 @@ androidxTestJunit    = "1.1.5"
 hilt                 = "2.57.1"
 hiltNavigationCompose = "1.2.0"
 pdfboxAndroid        = "2.0.27.0"
-mlkitTextRecognition = "16.0.0"
+playServicesMlkitTextRecognition = "19.0.1"
 playServicesTasks    = "18.2.0"
 mediapipeTasksText   = "0.10.14"
 mediapipeTasksGenAi  = "0.10.14"
@@ -62,7 +62,7 @@ hilt-android                         = { group = "com.google.dagger",          n
 hilt-compiler                        = { group = "com.google.dagger",          name = "hilt-compiler",               version.ref = "hilt" }
 androidx-hilt-navigation-compose     = { group = "androidx.hilt",              name = "hilt-navigation-compose",     version.ref = "hiltNavigationCompose" }
 pdfbox-android                       = { group = "com.tom-roush",              name = "pdfbox-android",              version.ref = "pdfboxAndroid" }
-mlkit-text-recognition               = { group = "com.google.mlkit",           name = "text-recognition",            version.ref = "mlkitTextRecognition" }
+google-play-services-mlkit-text-recognition = { group = "com.google.android.gms", name = "play-services-mlkit-text-recognition", version.ref = "playServicesMlkitTextRecognition" }
 google-play-services-tasks           = { group = "com.google.android.gms",     name = "play-services-tasks",         version.ref = "playServicesTasks" }
 mediapipe-tasks-text                 = { group = "com.google.mediapipe",       name = "tasks-text",                  version.ref = "mediapipeTasksText" }
 mediapipe-tasks-genai               = { group = "com.google.mediapipe",       name = "tasks-genai",                 version.ref = "mediapipeTasksGenAi" }

@@ -25,7 +25,7 @@ class AppDatabaseMigrationTest {
     )
 
     @Test
-    fun migrate2To7_keepsSchemaValidAndNormalizesAcademicHierarchy() {
+    fun migrate2To10_keepsSchemaValidAndCreatesLocalAiTables() {
         helper.createDatabase(dbName, 2).apply {
             execSQL(
                 """
@@ -61,6 +61,51 @@ class AppDatabaseMigrationTest {
             assertEquals(true, it.moveToFirst())
             assertEquals("Sin titulacion", it.getString(0))
             assertEquals(1, it.getInt(1))
+        }
+
+        val localAiTables = db.query(
+            SimpleSQLiteQuery(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table'
+                  AND name IN ('ai_document_chunks', 'ai_chunk_embeddings', 'ai_indexing_runs', 'local_ai_model_state')
+                ORDER BY name
+                """.trimIndent()
+            )
+        )
+        localAiTables.use {
+            assertEquals(true, it.moveToFirst())
+            val found = mutableListOf<String>()
+            do {
+                found += it.getString(0)
+            } while (it.moveToNext())
+            assertEquals(
+                listOf("ai_chunk_embeddings", "ai_document_chunks", "ai_indexing_runs", "local_ai_model_state"),
+                found
+            )
+        }
+
+        val localStateRows = db.query(
+            SimpleSQLiteQuery(
+                """
+                SELECT COUNT(1)
+                FROM pragma_table_info('local_ai_model_state')
+                WHERE name IN (
+                    'displayName',
+                    'supportedAbisCsv',
+                    'minSdk',
+                    'downloadUrl',
+                    'expectedSha256',
+                    'downloadedBytes',
+                    'totalBytes'
+                )
+                """.trimIndent()
+            )
+        )
+        localStateRows.use {
+            assertEquals(true, it.moveToFirst())
+            assertEquals(7, it.getInt(0))
         }
 
         db.close()

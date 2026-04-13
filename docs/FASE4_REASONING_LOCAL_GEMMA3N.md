@@ -1,52 +1,54 @@
-# Methodica Fase 4.1 (correctiva) — Integración real de runtime Gemma 3n
+﻿# Fase 4 cerrada: Gemma 3n local para reasoning con distribución preparada
 
-## Estado final inequívoco de esta fase
-**Situación B (explícita):**
-- El proyecto **sí** queda integrado con runtime real de MediaPipe GenAI (`tasks-genai`) a nivel de dependencias y API.
-- Pero en este repositorio **no se incluye** el archivo de modelo Gemma 3n (`.task`) en `assets`, ni URL de descarga configurada.
-- Por tanto, en el estado actual del repo, el camino estable operativo sigue siendo el **fallback heurístico**.
+## Estado real
 
-No se presenta Gemma local como camino principal operativo hasta que el modelo compatible esté realmente instalado en dispositivo.
+Methodica integra reasoning local real con MediaPipe GenAI y Gemma 3n, y ya tiene infraestructura para descarga/instalación automática en almacenamiento privado de la app. Lo único que sigue bloqueado por diseño es la publicación del descriptor remoto definitivo de Gemma 3n mientras no se confirme la licencia de redistribución.
 
-## Runtime/dependencias verificadas
-- Runtime de embeddings: `com.google.mediapipe:tasks-text`.
-- Runtime de reasoning local: `com.google.mediapipe:tasks-genai`.
-- Integración de reasoning actual: **directa** (sin reflexión) contra:
-  - `com.google.mediapipe.tasks.genai.llminference.LlmInference`
-  - `LlmInference.createFromOptions(context, options)`
-  - `generateResponse(prompt)`
+- Runtime real: `com.google.mediapipe:tasks-genai`
+- API real: `LlmInference.createFromOptions(context, options)`
+- Formato esperado: `.litertlm`
+- Artefacto esperado: `gemma-3n-E2B-it-int4.litertlm`
+- Ruta runtime canónica en la app: `files/local_models/gemma3n/gemma-3n-E2B-it-int4.litertlm`
+- Empaquetado actual: el `.litertlm` se excluye del APK y no debe formar parte del repositorio
+- Distribución actual: infraestructura lista, manifest remoto configurable, publicación pendiente de licencia
 
-## Qué corrige esta fase frente al estado anterior
-1. Se elimina la “integración reflectiva ambigua” para reasoning y se usa API tipada de `tasks-genai`.
-2. Se clasifica y reporta fallo real por categorías de runtime:
-   - runtime ausente en ejecución (`NoClassDefFoundError`),
-   - método ausente/incompatible (`NoSuchMethodError`),
-   - fallo de inicialización (`IllegalStateException`),
-   - incompatibilidad de runtime/JNI (`UnsatisfiedLinkError`),
-   - modelo no disponible,
-   - error de inferencia.
-3. El error se propaga al `LocalModelRuntimeManager` con `markModelError(...)`.
-4. El coordinador **no** marca modelos locales como listos si no está instalado `GEMMA_3N_REASONING`.
-5. Si Gemma no está realmente disponible/ready, el flujo entra directamente en fallback heurístico con motivo explícito.
+## Contrato del modelo
 
-## Bloqueo técnico real pendiente
-Para que Gemma 3n local pase a estado operativo (Situación A), falta:
-1. Proveer modelo `.task` de Gemma 3n compatible con `tasks-genai` en:
-   - `assets/models/gemma3n/gemma-3n-e2b-it-int4.task`, o
-   - `files/local_models/gemma3n/gemma-3n-e2b-it-int4.task`.
-2. (Recomendado) fijar `expectedSha256` en `LocalAiModelSpec` para integridad fuerte.
-3. Validar en hardware objetivo (RAM/ABI) que el runtime GenAI inicializa correctamente.
+- `id`: `gemma-3n-e2b-it-int4-litertlm`
+- `modelVersion`: `gemma-3n-e2b-it-int4-litertlm-v1`
+- `expectedSha256`: `2ed7bc3a0026c93d5b8a4544b352d9d00cd66ff0bac3ef6a20ac3d2cba4010d6`
+- `requiredDiskBytes`: `4831838208`
+- `requiredRamMb`: `4096`
+- ABI prevista para publicación productiva: `arm64-v8a`
+- `downloadUrl`: no embebida en código por diseño; debe venir del manifest remoto publicado por el equipo cuando la redistribución quede aprobada
 
-## Cuándo entra fallback heurístico
-Fallback entra en cualquiera de estos casos:
-- estado runtime no `READY` para `GEMMA_3N_REASONING`,
-- modelo ausente,
-- incompatibilidad de dispositivo/runtime,
-- fallo de inicialización o inferencia,
-- incompatibilidad de API de runtime.
+## Comportamiento nominal y degradado
 
-## Limitaciones Android reales documentadas
-- Requisitos de RAM/espacio pueden bloquear modelos grandes en gama media/baja.
-- Dependencia JNI/ABI puede fallar por arquitectura o packaging.
-- Sin artefacto de modelo no hay inferencia local real, aunque el runtime esté enlazado en Gradle.
+### Nominal
 
+- La app resuelve el descriptor del modelo desde el manifest remoto configurable.
+- Si el archivo no existe en `filesDir`, Methodica programa una descarga con `WorkManager`.
+- El worker descarga a un `.download` temporal, verifica integridad y mueve el archivo a almacenamiento privado.
+- `GemmaLocalReasoningProvider` solo infiere si el runtime marca `READY`.
+- `DefaultAiWorkflowCoordinator` marca `localModelsReady = true` solo si `installedModels` contiene `GEMMA_3N_REASONING`.
+
+### Degradado
+
+- Si el descriptor remoto no está publicado, la licencia sigue pendiente, no hay espacio, falla la integridad o el runtime no es compatible, el estado persiste `ERROR`, `NO_SPACE` o `INCOMPATIBLE_DEVICE`.
+- El coordinador cae a fallback heurístico y la UI lo indica explícitamente.
+- Build, tests y `assembleDebug` siguen funcionando porque Gemma 3n no es obligatoria para compilar.
+
+## Mensaje de verdad para el equipo
+
+- Gemma 3n ya no depende de que el usuario copie el archivo manualmente para que el flujo exista en la app.
+- La parte que sigue pendiente no es técnica sino de publicación: hay que confirmar licencia y exponer un manifest remoto real con `downloadUrl`, `sha256`, tamaño y ABI.
+- Mientras ese manifest no se publique, Methodica debe comunicar con honestidad que el flujo local queda en degradado.
+- El repo no debe contener el `.litertlm` ni empaquetarlo en el APK.
+
+## Validación operativa
+
+1. Ejecutar `:app:compileDebugKotlin`, `:app:testDebugUnitTest` y `:app:assembleDebug`.
+2. Confirmar que el APK no contiene `*.litertlm`.
+3. Confirmar que Ajustes muestra Gemma 3n con estado persistido, error claro si no hay manifest y acciones de descarga/reintento/cancelación.
+4. Confirmar que `AiWorkflowCapability.localModelsReady` solo sube a `true` cuando el modelo queda realmente en `READY`.
+5. Confirmar que, sin descriptor remoto válido, la app cae a fallback heurístico sin estados engañosos.

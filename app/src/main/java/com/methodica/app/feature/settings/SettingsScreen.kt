@@ -1,4 +1,4 @@
-package com.methodica.app.feature.settings
+﻿package com.methodica.app.feature.settings
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -23,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -46,6 +47,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.methodica.app.domain.ai.local.LocalAiModelType
+import com.methodica.app.domain.ai.local.LocalModelInstallState
+import com.methodica.app.domain.ai.local.LocalModelInstallStatus
 import java.time.DayOfWeek
 import java.time.format.TextStyle
 import java.util.Locale
@@ -101,11 +105,11 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Text("Ajustes de planificación", style = MaterialTheme.typography.headlineSmall)
+        Text("Ajustes de planificaciÃ³n", style = MaterialTheme.typography.headlineSmall)
 
-        // Horas disponibles por día
+        // Horas disponibles por dÃ­a
         Column {
-            Text("Horas de estudio por día: ${uiState.availableHoursPerDay}", style = MaterialTheme.typography.titleSmall)
+            Text("Horas de estudio por dÃ­a: ${uiState.availableHoursPerDay}", style = MaterialTheme.typography.titleSmall)
             Slider(
                 value         = uiState.availableHoursPerDay.toFloat(),
                 onValueChange = { viewModel.onHoursPerDayChange(it.roundToInt()) },
@@ -115,9 +119,9 @@ fun SettingsScreen(
             )
         }
 
-        // Días no disponibles
+        // DÃ­as no disponibles
         Column {
-            Text("Días no disponibles", style = MaterialTheme.typography.titleSmall)
+            Text("DÃ­as no disponibles", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DayOfWeek.entries.forEach { day ->
@@ -130,9 +134,9 @@ fun SettingsScreen(
             }
         }
 
-        // Colchón antes del examen
+        // ColchÃ³n antes del examen
         Column {
-            Text("Colchón antes del examen: ${uiState.bufferDaysBeforeExam} días", style = MaterialTheme.typography.titleSmall)
+            Text("ColchÃ³n antes del examen: ${uiState.bufferDaysBeforeExam} dÃ­as", style = MaterialTheme.typography.titleSmall)
             Slider(
                 value         = uiState.bufferDaysBeforeExam.toFloat(),
                 onValueChange = { viewModel.onBufferDaysChange(it.roundToInt()) },
@@ -142,9 +146,9 @@ fun SettingsScreen(
             )
         }
 
-        // Días de repaso final
+        // DÃ­as de repaso final
         Column {
-            Text("Días de repaso final: ${uiState.finalReviewDays}", style = MaterialTheme.typography.titleSmall)
+            Text("DÃ­as de repaso final: ${uiState.finalReviewDays}", style = MaterialTheme.typography.titleSmall)
             Slider(
                 value         = uiState.finalReviewDays.toFloat(),
                 onValueChange = { viewModel.onFinalReviewDaysChange(it.roundToInt()) },
@@ -161,7 +165,7 @@ fun SettingsScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text("Recordatorios", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "Notifica sesiones de hoy y evaluaciones próximas",
+                    "Notifica sesiones de hoy y evaluaciones prÃ³ximas",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -196,7 +200,7 @@ fun SettingsScreen(
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Perfil de estudiante", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Este perfil se usa para personalizar la estimación IA de complejidad por tema.",
+                "Este perfil se usa para personalizar la estimaciÃ³n IA de complejidad por tema.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -217,7 +221,7 @@ fun SettingsScreen(
 
             Column {
                 Text(
-                    "Comprensión lectora: ${uiState.readingComprehensionLevel}/5",
+                    "ComprensiÃ³n lectora: ${uiState.readingComprehensionLevel}/5",
                     style = MaterialTheme.typography.labelMedium
                 )
                 Slider(
@@ -233,7 +237,7 @@ fun SettingsScreen(
                 Text("Titulaciones en curso", style = MaterialTheme.typography.labelMedium)
                 if (uiState.availableDegrees.isEmpty()) {
                     Text(
-                        "No hay titulaciones creadas todavía.",
+                        "No hay titulaciones creadas todavÃ­a.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -254,7 +258,7 @@ fun SettingsScreen(
                 Text("Titulaciones aprobadas", style = MaterialTheme.typography.labelMedium)
                 if (uiState.availableDegrees.isEmpty()) {
                     Text(
-                        "No hay titulaciones creadas todavía.",
+                        "No hay titulaciones creadas todavÃ­a.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -295,10 +299,35 @@ fun SettingsScreen(
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Conexión IA externa", style = MaterialTheme.typography.titleSmall)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Modelos locales", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Si usas este modo, consumirás créditos de tu proveedor.",
+                "Methodica instala los modelos en almacenamiento privado. Si falta alguno, puedes descargarlo o reinstalarlo desde aquÃ­.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            uiState.localModelStates.forEach { modelState ->
+                LocalModelStateCard(
+                    state = modelState,
+                    onDownload = { viewModel.onDownloadLocalModel(modelState.type) },
+                    onCancel = { viewModel.onCancelLocalModelDownload(modelState.type) },
+                    onDelete = { viewModel.onDeleteLocalModel(modelState.type) },
+                    onReinstall = { viewModel.onReinstallLocalModel(modelState.type) }
+                )
+            }
+            if (uiState.localModelStates.any { it.type == LocalAiModelType.GEMMA_3N_REASONING && it.redistributionRequiresLicenseConfirmation }) {
+                Text(
+                    "La redistribuciÃ³n remota de Gemma 3n debe confirmarse legalmente antes de publicar su entrada definitiva en el manifest.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("ConexiÃ³n IA externa", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Si usas este modo, consumirÃ¡s crÃ©ditos de tu proveedor.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -311,7 +340,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Activar IA externa", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Apaga esta opción para forzar modo heurístico en planificación.",
+                        "Apaga esta opciÃ³n para forzar modo heurÃ­stico en planificaciÃ³n.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -324,7 +353,7 @@ fun SettingsScreen(
 
             if (!uiState.aiExternalEnabled) return@Column
 
-            // 🆕 DROPDOWN DE PROVEEDOR
+            // ðŸ†• DROPDOWN DE PROVEEDOR
             Column {
                 Button(
                     onClick = viewModel::onToggleProviderDropdown,
@@ -336,7 +365,7 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Start
                     )
-                    Text("▼", modifier = Modifier.padding(start = 8.dp))
+                    Text("â–¼", modifier = Modifier.padding(start = 8.dp))
                 }
 
                 DropdownMenu(
@@ -375,7 +404,7 @@ fun SettingsScreen(
                                 modifier = Modifier.weight(1f),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Start
                             )
-                            Text("▼", modifier = Modifier.padding(start = 8.dp))
+                            Text("â–¼", modifier = Modifier.padding(start = 8.dp))
                         }
 
                         DropdownMenu(
@@ -400,11 +429,11 @@ fun SettingsScreen(
                 )
             }
 
-            // URL Base (solo lectura, mapeada automáticamente)
+            // URL Base (solo lectura, mapeada automÃ¡ticamente)
             OutlinedTextField(
                 value = uiState.aiBaseUrl,
                 onValueChange = {},
-                label = { Text("Base URL (automática)") },
+                label = { Text("Base URL (automÃ¡tica)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 enabled = false
@@ -421,7 +450,7 @@ fun SettingsScreen(
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    "Documentación de proveedores",
+                    "DocumentaciÃ³n de proveedores",
                     style = MaterialTheme.typography.titleSmall
                 )
                 uiState.availableProviders.forEach { provider ->
@@ -455,7 +484,7 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     } else {
-                        Text("Probar conexión")
+                        Text("Probar conexiÃ³n")
                     }
                 }
             }
@@ -474,3 +503,93 @@ fun SettingsScreen(
         SnackbarHost(hostState = snackbar)
     }
 }
+
+@Composable
+private fun LocalModelStateCard(
+    state: LocalModelInstallState,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onDelete: () -> Unit,
+    onReinstall: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(state.displayName, style = MaterialTheme.typography.titleMedium)
+        Text(
+            buildString {
+                append("Estado: ")
+                append(state.status.name)
+                append(" • RAM min: ")
+                append(state.requiredRamMb)
+                append(" MB")
+                append(" • Disco min: ")
+                append(state.requiredDiskBytes / 1024L / 1024L)
+                append(" MB")
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (state.supportedAbis.isNotEmpty()) {
+            Text(
+                "ABI soportadas: ${state.supportedAbis.joinToString()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        state.progressPercent?.let { progress ->
+            LinearProgressIndicator(
+                progress = { progress / 100f },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "Progreso: $progress% (${state.downloadedBytes / 1024L / 1024L} / ${state.totalBytes / 1024L / 1024L} MB)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        state.lastError?.takeIf { it.isNotBlank() }?.let { detail ->
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (state.status == LocalModelInstallStatus.READY) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (state.status) {
+                LocalModelInstallStatus.DOWNLOADING,
+                LocalModelInstallStatus.VERIFYING,
+                LocalModelInstallStatus.INSTALLING -> {
+                    Button(onClick = onCancel) {
+                        Text("Cancelar")
+                    }
+                }
+                LocalModelInstallStatus.READY -> {
+                    Button(onClick = onReinstall, enabled = state.isDownloadConfigured) {
+                        Text("Reinstalar")
+                    }
+                    TextButton(onClick = onDelete) {
+                        Text("Borrar")
+                    }
+                }
+                LocalModelInstallStatus.NOT_INSTALLED,
+                LocalModelInstallStatus.ERROR,
+                LocalModelInstallStatus.NO_SPACE,
+                LocalModelInstallStatus.INCOMPATIBLE_DEVICE -> {
+                    Button(onClick = onDownload, enabled = state.isDownloadConfigured) {
+                        Text(if (state.status == LocalModelInstallStatus.NOT_INSTALLED) "Descargar" else "Reintentar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+
